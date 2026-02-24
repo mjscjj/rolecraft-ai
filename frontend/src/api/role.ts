@@ -1,4 +1,5 @@
-import client, { ApiResponse, handleApiError } from './client';
+import type { ApiResponse } from './client';
+import client, { handleApiError } from './client';
 
 // 角色类型
 export interface Role {

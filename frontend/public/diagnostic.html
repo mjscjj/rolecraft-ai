@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RoleCraft AI - 诊断页面</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container { max-width: 900px; margin: 0 auto; }
+    h1 { color: white; text-align: center; margin-bottom: 20px; }
+    .card { 
+      background: white; 
+      border-radius: 12px; 
+      padding: 20px; 
+      margin-bottom: 15px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .test-item { 
+      padding: 12px; 
+      margin: 8px 0;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .pass { background: #dcfce7; color: #166534; }
+    .fail { background: #fee2e2; color: #991b1b; }
+    .pending { background: #fef3c7; color: #92400e; }
+    .icon { font-size: 20px; }
+    .error-box {
+      background: #fee2e2;
+      color: #991b1b;
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 10px;
+      font-family: monospace;
+      white-space: pre-wrap;
+      font-size: 12px;
+    }
+    .nav { 
+      display: flex; 
+      gap: 10px; 
+      margin-bottom: 20px;
+      justify-content: center;
+    }
+    .nav a {
+      color: white;
+      text-decoration: none;
+      padding: 10px 20px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 8px;
+    }
+    .nav a:hover { background: rgba(255,255,255,0.3); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 RoleCraft AI 诊断中心</h1>
+    
+    <div class="nav">
+      <a href="/">🏠 主页</a>
+      <a href="/roles">🎭 角色</a>
+      <a href="/chat">💬 对话</a>
+    </div>
+    
+    <div class="card">
+      <h2>📊 系统诊断</h2>
+      <div id="diagnostics">正在运行诊断...</div>
+    </div>
+    
+    <div class="card">
+      <h2>🔧 环境信息</h2>
+      <div id="environment">检测中...</div>
+    </div>
+    
+    <div class="card">
+      <h2>❌ 错误日志</h2>
+      <div id="errors">无错误</div>
+    </div>
+  </div>
+
+  <script type="module">
+    const results = [];
+    const errors = [];
+    
+    function addResult(name, passed, details = '') {
+      results.push({ name, passed, details });
+    }
+    
+    function addError(source, message) {
+      errors.push({ source, message, time: new Date().toLocaleTimeString() });
+    }
+    
+    // 1. 检查 DOM
+    try {
+      const root = document.getElementById('root');
+      addResult('DOM Root 元素', false, '当前是诊断页面，非主应用');
+    } catch (e) {
+      addResult('DOM 检查', false, e.message);
+    }
+    
+    // 2. 检查 React
+    try {
+      const react = await import('/node_modules/.vite/deps/react.js?v=7d3b4c5e');
+      addResult('React 加载', true, `版本: ${react.version || '已加载'}`);
+    } catch (e) {
+      addResult('React 加载', false, e.message);
+      addError('React', e.message);
+    }
+    
+    // 3. 检查 React Router
+    try {
+      const router = await import('/node_modules/.vite/deps/react-router-dom.js?v=7d3b4c5e');
+      addResult('React Router', true, '已加载');
+    } catch (e) {
+      addResult('React Router', false, e.message);
+      addError('Router', e.message);
+    }
+    
+    // 4. 检查主应用
+    try {
+      await import('/src/main.tsx');
+      addResult('主应用入口', true, '加载成功');
+    } catch (e) {
+      addResult('主应用入口', false, e.message);
+      addError('Main', e.message);
+    }
+    
+    // 5. 检查后端 API
+    try {
+      const res = await fetch('http://localhost:8080/health');
+      const data = await res.json();
+      addResult('后端 API', res.ok, `状态: ${res.status}`);
+    } catch (e) {
+      addResult('后端 API', false, '无法连接');
+      addError('API', e.message);
+    }
+    
+    // 6. 检查角色模板
+    try {
+      const res = await fetch('http://localhost:8080/api/v1/roles/templates');
+      const data = await res.json();
+      const count = data.data?.length || 0;
+      addResult('角色模板', res.ok, `数量: ${count}`);
+    } catch (e) {
+      addResult('角色模板', false, e.message);
+    }
+    
+    // 显示结果
+    const diagDiv = document.getElementById('diagnostics');
+    diagDiv.innerHTML = results.map(r => `
+      <div class="test-item ${r.passed ? 'pass' : 'fail'}">
+        <span class="icon">${r.passed ? '✅' : '❌'}</span>
+        <div>
+          <strong>${r.name}</strong>
+          ${r.details ? `<br><small>${r.details}</small>` : ''}
+        </div>
+      </div>
+    `).join('');
+    
+    // 显示环境
+    const envDiv = document.getElementById('environment');
+    envDiv.innerHTML = `
+      <div class="test-item pending">
+        <span class="icon">🌐</span>
+        <div>
+          <strong>浏览器</strong><br>
+          <small>${navigator.userAgent.split(' ').slice(-2).join(' ')}</small>
+        </div>
+      </div>
+      <div class="test-item pending">
+        <span class="icon">📅</span>
+        <div>
+          <strong>时间</strong><br>
+          <small>${new Date().toLocaleString()}</small>
+        </div>
+      </div>
+      <div class="test-item pending">
+        <span class="icon">🔗</span>
+        <div>
+          <strong>当前 URL</strong><br>
+          <small>${window.location.href}</small>
+        </div>
+      </div>
+    `;
+    
+    // 显示错误
+    const errorDiv = document.getElementById('errors');
+    if (errors.length > 0) {
+      errorDiv.innerHTML = errors.map(e => `
+        <div class="error-box">
+          [${e.time}] ${e.source}: ${e.message}
+        </div>
+      `).join('');
+    } else {
+      errorDiv.innerHTML = '<div class="test-item pass"><span class="icon">✅</span>无错误</div>';
+    }
+    
+    // 全局错误捕获
+    window.onerror = (msg, url, line, col, error) => {
+      addError('Runtime', `${msg} at ${url}:${line}`);
+      errorDiv.innerHTML += `<div class="error-box">[运行时] ${msg}</div>`;
+    };
+    
+    window.onunhandledrejection = (event) => {
+      addError('Promise', event.reason);
+      errorDiv.innerHTML += `<div class="error-box">[Promise] ${event.reason}</div>`;
+    };
+  </script>
+</body>
+</html>

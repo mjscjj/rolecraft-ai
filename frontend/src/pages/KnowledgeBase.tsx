@@ -1,4 +1,4 @@
-import { FC, useState } from 'react';
+import type { FC } from 'react'; import { useState } from 'react';
 import { 
   Upload, 
   FileText, 
@@ -11,7 +11,7 @@ import {
   Clock,
   AlertCircle
 } from 'lucide-react';
-import { Document } from '../types';
+import type { Document } from '../types';
 
 const mockDocuments: Document[] = [
   { id: '1', name: '产品手册.pdf', fileType: 'PDF', fileSize: 2621440, status: 'completed', createdAt: '2024-01-15' },

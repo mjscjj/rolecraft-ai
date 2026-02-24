@@ -1,4 +1,4 @@
-import { FC } from 'react';
+import type { FC } from 'react';
 import { 
   Users, 
   FileText, 
@@ -8,7 +8,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { RoleCard } from '../components/RoleCard';
-import { Role, ChatSession } from '../types';
+import type { Role, ChatSession } from '../types';
 
 const stats = [
   { label: '我的角色', value: 12, icon: Users, trend: '+2' },

@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
@@ -124,12 +127,56 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	})
 }
 
-// Refresh 刷新令牌
+// Refresh 刷新令牌 - 从过期 token 中提取用户信息并生成新 token
+// 支持 Authorization Bearer header 或 JSON body 中的 token
 func (h *AuthHandler) Refresh(c *gin.Context) {
-	userId, _ := c.Get("userId")
-	email, _ := c.Get("email")
+	var tokenString string
 
-	token, err := middleware.GenerateToken(userId.(string), email.(string))
+	// 从 Authorization header 获取 token
+	authHeader := c.Request.Header.Get("Authorization")
+	if authHeader != "" {
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+			tokenString = parts[1]
+		}
+	}
+
+	// 如果 header 中没有，尝试从 JSON body 获取
+	if tokenString == "" {
+		var req struct {
+			Token string `json:"token"`
+		}
+		if err := c.ShouldBindJSON(&req); err == nil && req.Token != "" {
+			tokenString = req.Token
+		}
+	}
+
+	if tokenString == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "token is required"})
+		return
+	}
+
+	// 解析 token (即使过期也能提取 claims)
+	claims := &middleware.Claims{}
+	_, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		return middleware.JWTSecret, nil
+	})
+
+	// 允许 token 过期，但必须是有效的签名
+	if err != nil && !errors.Is(err, jwt.ErrTokenExpired) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+		return
+	}
+
+	// 验证用户仍然存在
+	var user models.User
+	if result := h.db.Where("id = ?", claims.UserID).First(&user); result.Error != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
+		return
+	}
+
+	// 生成新 token
+	newToken, err := middleware.GenerateToken(claims.UserID, claims.Email)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
@@ -139,7 +186,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		"code":    200,
 		"message": "success",
 		"data": gin.H{
-			"token": token,
+			"token": newToken,
 		},
 	})
 }

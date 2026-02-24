@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { Role, roleApi, CreateRoleRequest } from '../api/role';
+import type { Role, CreateRoleRequest } from '../api/role';
+import { roleApi } from '../api/role';
 
 interface RoleState {
   roles: Role[];
@@ -19,7 +20,7 @@ interface RoleState {
   clearError: () => void;
 }
 
-export const useRoleStore = create<RoleState>((set, get) => ({
+export const useRoleStore = create<RoleState>((set) => ({
   roles: [],
   templates: [],
   currentRole: null,

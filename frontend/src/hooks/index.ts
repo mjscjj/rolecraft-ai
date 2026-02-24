@@ -62,7 +62,7 @@ export const useChat = () => {
 };
 
 // 角色对话 Hook (便捷组合)
-export const useRoleChat = (roleId?: string) => {
+export const useRoleChat = (_roleId?: string) => {
   const roleStore = useRoleStore();
   const chatStore = useChatStore();
   

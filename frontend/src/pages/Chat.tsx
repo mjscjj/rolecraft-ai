@@ -1,6 +1,6 @@
-import { FC, useState, useRef, useEffect } from 'react';
+import type { FC } from 'react'; import { useState, useRef, useEffect } from 'react';
 import { Send, Paperclip, MoreVertical, Copy, RotateCcw, ThumbsUp, ThumbsDown } from 'lucide-react';
-import { Message } from '../types';
+import type { Message } from '../types';
 
 const mockMessages: Message[] = [
   {

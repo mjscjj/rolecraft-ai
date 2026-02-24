@@ -1,7 +1,7 @@
-import { FC, useState } from 'react';
+import type { FC } from 'react'; import { useState } from 'react';
 import { Search, Plus, Filter, Grid3X3, List } from 'lucide-react';
 import { RoleCard } from '../components/RoleCard';
-import { Role } from '../types';
+import type { Role } from '../types';
 
 const categories = ['全部', '通用', '营销', '法律', '财务', '技术', '人事', '行政'];
 

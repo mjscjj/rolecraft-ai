@@ -1,5 +1,5 @@
-import { FC } from 'react';
-import { Role } from '../types';
+import type { FC } from 'react';
+import type { Role } from '../types';
 
 interface RoleCardProps {
   role: Role;

@@ -1,4 +1,5 @@
-import client, { ApiResponse, handleApiError } from './client';
+import type { ApiResponse } from './client';
+import client, { handleApiError } from './client';
 
 // 会话类型
 export interface ChatSession {
