@@ -19,6 +19,7 @@ type ChatHandler struct {
 	db     *gorm.DB
 	config *config.Config
 	openai *ai.OpenAIClient
+	mock   *ai.MockAIClient
 }
 
 // NewChatHandler 创建对话处理器
@@ -30,10 +31,13 @@ func NewChatHandler(db *gorm.DB, cfg *config.Config) *ChatHandler {
 			Model:  "gpt-4",
 		})
 	}
+	// 始终初始化 Mock AI 用于开发和测试
+	mockClient := ai.NewMockAIClient()
 	return &ChatHandler{
 		db:     db,
 		config: cfg,
 		openai: openaiClient,
+		mock:   mockClient,
 	}
 }
 
@@ -186,14 +190,21 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 
 	var assistantContent string
 	if h.openai != nil {
+		// 使用真实 OpenAI
 		resp, err := h.openai.ChatCompletion(c.Request.Context(), messages, 0.7)
 		if err != nil {
-			assistantContent = fmt.Sprintf("AI 服务错误: %v", err)
+			assistantContent = fmt.Sprintf("AI 服务错误：%v", err)
 		} else if len(resp.Choices) > 0 {
 			assistantContent = resp.Choices[0].Message.Content
 		}
 	} else {
-		assistantContent = fmt.Sprintf("收到: \"%s\"。（OpenAI API Key 未配置）", req.Content)
+		// 使用 Mock AI（开发/测试模式）
+		resp, err := h.mock.ChatCompletion(c.Request.Context(), messages, 0.7)
+		if err != nil {
+			assistantContent = fmt.Sprintf("Mock AI 错误：%v", err)
+		} else if len(resp.Choices) > 0 {
+			assistantContent = resp.Choices[0].Message.Content
+		}
 	}
 
 	assistantMsg := models.Message{
@@ -306,21 +317,28 @@ func (h *ChatHandler) ChatStream(c *gin.Context) {
 		}
 	done:
 	} else {
-		mockResponse := "OpenAI API Key 未配置。请设置 OPENAI_API_KEY 环境变量。"
-		for i, char := range mockResponse {
-			fullContent += string(char)
-			data := map[string]interface{}{"content": string(char), "done": i == len(mockResponse)-1}
-			jsonData, _ := json.Marshal(data)
-			fmt.Fprintf(c.Writer, "data: %s\n\n", jsonData)
-			flusher.Flush()
-			time.Sleep(30 * time.Millisecond)
+		// 使用 Mock AI 流式响应
+		chunkChan, _ := h.mock.ChatCompletionStream(c.Request.Context(), messages, 0.7)
+		for chunk := range chunkChan {
+			if len(chunk.Choices) > 0 {
+				if chunk.Choices[0].Delta.Content != "" {
+					content := chunk.Choices[0].Delta.Content
+					fullContent += content
+					data := map[string]interface{}{"content": content, "done": false}
+					jsonData, _ := json.Marshal(data)
+					fmt.Fprintf(c.Writer, "data: %s\n\n", jsonData)
+					flusher.Flush()
+				}
+				if chunk.Choices[0].FinishReason == "stop" {
+					data := map[string]interface{}{"done": true}
+					jsonData, _ := json.Marshal(data)
+					fmt.Fprintf(c.Writer, "data: %s\n\n", jsonData)
+					flusher.Flush()
+					break
+				}
+			}
 		}
 	}
-
-	data := map[string]interface{}{"done": true}
-	jsonData, _ := json.Marshal(data)
-	fmt.Fprintf(c.Writer, "data: %s\n\n", jsonData)
-	flusher.Flush()
 
 	if fullContent != "" {
 		assistantMsg := models.Message{

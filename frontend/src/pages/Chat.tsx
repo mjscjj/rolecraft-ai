@@ -1,67 +1,20 @@
-import type { FC } from 'react'; import { useState, useRef, useEffect } from 'react';
+import type { FC } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Send, Paperclip, MoreVertical, Copy, RotateCcw, ThumbsUp, ThumbsDown } from 'lucide-react';
 import type { Message } from '../types';
 
-const mockMessages: Message[] = [
-  {
-    id: '1',
-    role: 'assistant',
-    content: '你好！我是你的营销助手，可以帮助你制定营销策略、撰写文案、分析市场趋势。请问有什么可以帮你的？',
-    createdAt: '2024-01-20 10:00:00',
-  },
-  {
-    id: '2',
-    role: 'user',
-    content: '帮我写一条关于新品发布的朋友圈文案',
-    createdAt: '2024-01-20 10:01:00',
-  },
-  {
-    id: '3',
-    role: 'assistant',
-    content: `好的！根据新品发布的需求，我为你准备了几个版本：
+const API_BASE = 'http://localhost:8080/api/v1';
 
-**版本一（正式商务风）**
-🎉 重磅发布！我们全新产品正式上线！
+interface ChatProps {
+  roleId?: string;
+  roleName?: string;
+}
 
-经过数月的精心打磨，我们终于迎来了这款划时代的产品。它不仅代表了技术的突破，更承载着我们对品质的执着追求。
-
-✨ 核心亮点：
-• 领先技术，性能卓越
-• 匠心设计，品质保证  
-• 贴心服务，全程无忧
-
-现在就体验，开启全新篇章！
-
-#新品发布 #科技创新 #品质生活
-
----
-
-**版本二（轻松活泼风）**
-姐妹们！好消息来啦～🎊
-
-我们的新品终于和大家见面啦！这次真的准备了超级久，就为了给宝贝们最好的体验！
-
-💖 为什么值得期待：
-✅ 颜值高到没朋友
-✅ 好用程度五颗星
-✅ 价格美丽到哭泣
-
-第一批还有限时优惠哦，手慢无！💨
-
-点击下方链接，抢先体验 👇
-
-#新品上市 #种草好物 #限时优惠`,
-    sources: ['产品手册.pdf', '营销策略指南.pdf'],
-    createdAt: '2024-01-20 10:02:00',
-  },
-];
-
-const quickCommands = ['/总结', '/翻译', '/扩展', '/精炼', '/润色'];
-
-export const Chat: FC = () => {
-  const [messages, setMessages] = useState<Message[]>(mockMessages);
+export const Chat: FC<ChatProps> = ({ roleId, roleName = 'AI 助手' }) => {
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -72,8 +25,50 @@ export const Chat: FC = () => {
     scrollToBottom();
   }, [messages]);
 
-  const handleSend = () => {
-    if (!inputValue.trim()) return;
+  // 初始化会话
+  useEffect(() => {
+    const initSession = async () => {
+      const token = localStorage.getItem('token');
+      if (!token || !roleId) return;
+
+      try {
+        const res = await fetch(`${API_BASE}/chat-sessions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({ roleId, mode: 'quick' }),
+        });
+        const data = await res.json();
+        if (data.data?.id) {
+          setSessionId(data.data.id);
+          // 加载欢迎消息
+          if (data.data.role?.welcomeMessage) {
+            setMessages([{
+              id: 'welcome',
+              role: 'assistant',
+              content: data.data.role.welcomeMessage,
+              createdAt: new Date().toISOString(),
+            }]);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to create session:', err);
+      }
+    };
+
+    initSession();
+  }, [roleId]);
+
+  const handleSend = async () => {
+    if (!inputValue.trim() || !sessionId || isLoading) return;
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      alert('请先登录');
+      return;
+    }
 
     const newMessage: Message = {
       id: Date.now().toString(),
@@ -82,21 +77,47 @@ export const Chat: FC = () => {
       createdAt: new Date().toISOString(),
     };
 
-    setMessages([...messages, newMessage]);
+    setMessages(prev => [...prev, newMessage]);
     setInputValue('');
     setIsLoading(true);
 
-    // 模拟 AI 回复
-    setTimeout(() => {
-      const aiResponse: Message = {
+    try {
+      const res = await fetch(`${API_BASE}/chat/${sessionId}/complete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ content: newMessage.content }),
+      });
+
+      const data = await res.json();
+      
+      if (data.data?.assistantMessage) {
+        const aiResponse: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: data.data.assistantMessage.content,
+          createdAt: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, aiResponse]);
+      }
+    } catch (err) {
+      console.error('Failed to send message:', err);
+      const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: '收到！我来帮你优化这段文案。基于你提供的背景信息，我建议从以下几个角度进行调整...',
+        content: '抱歉，发生了错误。请稍后重试。',
         createdAt: new Date().toISOString(),
       };
-      setMessages(prev => [...prev, aiResponse]);
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
+  };
+
+  const handleCopy = (content: string) => {
+    navigator.clipboard.writeText(content);
   };
 
   return (
@@ -105,11 +126,13 @@ export const Chat: FC = () => {
       <div className="flex items-center justify-between pb-4 border-b border-slate-200">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center text-white font-semibold">
-            营
+            {roleName[0]}
           </div>
           <div>
-            <h2 className="font-semibold text-slate-900">营销专家</h2>
-            <p className="text-xs text-slate-500">在线</p>
+            <h2 className="font-semibold text-slate-900">{roleName}</h2>
+            <p className="text-xs text-slate-500">
+              {sessionId ? '🟢 在线' : '🟡 连接中...'}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -124,6 +147,13 @@ export const Chat: FC = () => {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto py-6 space-y-6">
+        {messages.length === 0 && !isLoading && (
+          <div className="flex flex-col items-center justify-center h-full text-slate-400">
+            <p className="text-lg">👋 开始和 {roleName} 对话吧！</p>
+            <p className="text-sm mt-2">输入问题或需求，AI 将为你提供帮助</p>
+          </div>
+        )}
+
         {messages.map((message) => (
           <div
             key={message.id}
@@ -176,7 +206,11 @@ export const Chat: FC = () => {
               {/* Actions */}
               {message.role === 'assistant' && (
                 <div className="flex items-center gap-1 mt-2 opacity-0 hover:opacity-100 transition-opacity">
-                  <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors" title="复制">
+                  <button 
+                    onClick={() => handleCopy(message.content)}
+                    className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors" 
+                    title="复制"
+                  >
                     <Copy className="w-4 h-4" />
                   </button>
                   <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors" title="重新生成">
@@ -215,19 +249,6 @@ export const Chat: FC = () => {
 
       {/* Input Area */}
       <div className="border-t border-slate-200 pt-4">
-        {/* Quick Commands */}
-        <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-1">
-          {quickCommands.map(cmd => (
-            <button
-              key={cmd}
-              onClick={() => setInputValue(cmd + ' ')}
-              className="text-xs px-3 py-1.5 bg-slate-100 text-slate-600 rounded-full hover:bg-slate-200 transition-colors whitespace-nowrap"
-            >
-              {cmd}
-            </button>
-          ))}
-        </div>
-
         {/* Input */}
         <div className="flex items-end gap-2 bg-white border border-slate-200 rounded-2xl p-2 shadow-sm">
           <button className="p-3 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
@@ -242,14 +263,15 @@ export const Chat: FC = () => {
                 handleSend();
               }
             }}
-            placeholder="输入消息..."
+            placeholder={sessionId ? "输入消息..." : "正在连接..."}
+            disabled={!sessionId || isLoading}
             rows={1}
-            className="flex-1 py-3 px-2 outline-none resize-none max-h-32"
+            className="flex-1 py-3 px-2 outline-none resize-none max-h-32 disabled:opacity-50"
             style={{ minHeight: '48px' }}
           />
           <button
             onClick={handleSend}
-            disabled={!inputValue.trim() || isLoading}
+            disabled={!inputValue.trim() || isLoading || !sessionId}
             className="p-3 bg-primary text-white rounded-xl hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Send className="w-5 h-5" />
