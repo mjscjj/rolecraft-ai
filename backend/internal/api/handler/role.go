@@ -20,15 +20,31 @@ func NewRoleHandler(db *gorm.DB) *RoleHandler {
 }
 
 // CreateRoleRequest 创建角色请求
+// @Description 创建或更新角色的请求体
 type CreateRoleRequest struct {
-	Name           string `json:"name" binding:"required"`
-	Description    string `json:"description"`
-	Category       string `json:"category"`
-	SystemPrompt   string `json:"systemPrompt" binding:"required"`
-	WelcomeMessage string `json:"welcomeMessage"`
+	// 角色名称
+	Name string `json:"name" binding:"required" example:"智能助理"`
+	// 角色描述
+	Description string `json:"description" example:"全能型办公助手"`
+	// 角色分类
+	Category string `json:"category" example:"通用"`
+	// 系统提示词
+	SystemPrompt string `json:"systemPrompt" binding:"required" example:"你是一位智能助理..."`
+	// 欢迎消息
+	WelcomeMessage string `json:"welcomeMessage" example:"你好！有什么可以帮你的吗？"`
 }
 
 // List 获取角色列表
+// @Summary 获取角色列表
+// @Description 获取所有角色，支持分类筛选和模板筛选
+// @Tags 角色
+// @Produce json
+// @Security BearerAuth
+// @Param category query string false "分类筛选"
+// @Param template query string false "是否仅返回模板 (true/false)"
+// @Success 200 {object} map[string]interface{} "角色列表"
+// @Failure 500 {object} map[string]string "服务器错误"
+// @Router /api/v1/roles [get]
 func (h *RoleHandler) List(c *gin.Context) {
 	var roles []models.Role
 
@@ -57,6 +73,16 @@ func (h *RoleHandler) List(c *gin.Context) {
 }
 
 // Get 获取单个角色
+// @Summary 获取角色详情
+// @Description 根据 ID 获取单个角色的详细信息
+// @Tags 角色
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "角色 ID"
+// @Success 200 {object} map[string]interface{} "角色详情"
+// @Failure 404 {object} map[string]string "角色不存在"
+// @Failure 500 {object} map[string]string "服务器错误"
+// @Router /api/v1/roles/{id} [get]
 func (h *RoleHandler) Get(c *gin.Context) {
 	id := c.Param("id")
 
@@ -74,6 +100,17 @@ func (h *RoleHandler) Get(c *gin.Context) {
 }
 
 // Create 创建角色
+// @Summary 创建角色
+// @Description 创建一个新的 AI 角色
+// @Tags 角色
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body CreateRoleRequest true "角色信息"
+// @Success 201 {object} map[string]interface{} "创建成功"
+// @Failure 400 {object} map[string]string "请求参数错误"
+// @Failure 500 {object} map[string]string "服务器错误"
+// @Router /api/v1/roles [post]
 func (h *RoleHandler) Create(c *gin.Context) {
 	var req CreateRoleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -103,6 +140,19 @@ func (h *RoleHandler) Create(c *gin.Context) {
 }
 
 // Update 更新角色
+// @Summary 更新角色
+// @Description 更新指定角色的信息
+// @Tags 角色
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "角色 ID"
+// @Param request body CreateRoleRequest true "角色信息"
+// @Success 200 {object} map[string]interface{} "更新成功"
+// @Failure 400 {object} map[string]string "请求参数错误"
+// @Failure 404 {object} map[string]string "角色不存在"
+// @Failure 500 {object} map[string]string "服务器错误"
+// @Router /api/v1/roles/{id} [put]
 func (h *RoleHandler) Update(c *gin.Context) {
 	id := c.Param("id")
 
@@ -138,6 +188,15 @@ func (h *RoleHandler) Update(c *gin.Context) {
 }
 
 // Delete 删除角色
+// @Summary 删除角色
+// @Description 删除指定的角色
+// @Tags 角色
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "角色 ID"
+// @Success 200 {object} map[string]string "删除成功"
+// @Failure 500 {object} map[string]string "服务器错误"
+// @Router /api/v1/roles/{id} [delete]
 func (h *RoleHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
 
@@ -153,6 +212,12 @@ func (h *RoleHandler) Delete(c *gin.Context) {
 }
 
 // GetTemplates 获取内置模板
+// @Summary 获取角色模板
+// @Description 获取系统内置的角色模板 (无需认证)
+// @Tags 角色
+// @Produce json
+// @Success 200 {object} map[string]interface{} "角色模板列表"
+// @Router /api/v1/roles/templates [get]
 func (h *RoleHandler) GetTemplates(c *gin.Context) {
 	templates := []models.Role{
 		{
@@ -191,7 +256,26 @@ func (h *RoleHandler) GetTemplates(c *gin.Context) {
 	})
 }
 
+// ChatRequest 对话请求
+// @Description 与角色对话的请求体
+type ChatRequest struct {
+	// 用户消息内容
+	Message string `json:"message" binding:"required" example:"你好，请帮我写一封邮件"`
+}
+
 // Chat 与角色对话
+// @Summary 与角色对话
+// @Description 发送消息给指定角色并获取 AI 回复
+// @Tags 角色
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "角色 ID"
+// @Param request body ChatRequest true "对话内容"
+// @Success 200 {object} map[string]interface{} "对话响应"
+// @Failure 400 {object} map[string]string "请求参数错误"
+// @Failure 404 {object} map[string]string "角色不存在"
+// @Router /api/v1/roles/{id}/chat [post]
 func (h *RoleHandler) Chat(c *gin.Context) {
 	id := c.Param("id")
 
@@ -209,14 +293,14 @@ func (h *RoleHandler) Chat(c *gin.Context) {
 		return
 	}
 
-	// TODO: 集成AI服务进行对话
+	// TODO: 集成 AI 服务进行对话
 	c.JSON(http.StatusOK, gin.H{
 		"code":    200,
 		"message": "success",
 		"data": gin.H{
 			"role":    role.Name,
-			"message": "收到消息: " + req.Message,
-			"reply":   "这是AI的回复（待集成OpenAI API）",
+			"message": "收到消息：" + req.Message,
+			"reply":   "这是 AI 的回复（待集成 OpenAI API）",
 		},
 	})
 }

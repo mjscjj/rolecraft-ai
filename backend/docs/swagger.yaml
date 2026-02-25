@@ -1,0 +1,461 @@
+basePath: /api/v1
+definitions:
+  internal_api_handler.ChatRequest:
+    description: 与角色对话的请求体
+    properties:
+      message:
+        description: 用户消息内容
+        example: 你好，请帮我写一封邮件
+        type: string
+    required:
+    - message
+    type: object
+  internal_api_handler.CreateRoleRequest:
+    description: 创建或更新角色的请求体
+    properties:
+      category:
+        description: 角色分类
+        example: 通用
+        type: string
+      description:
+        description: 角色描述
+        example: 全能型办公助手
+        type: string
+      name:
+        description: 角色名称
+        example: 智能助理
+        type: string
+      systemPrompt:
+        description: 系统提示词
+        example: 你是一位智能助理...
+        type: string
+      welcomeMessage:
+        description: 欢迎消息
+        example: 你好！有什么可以帮你的吗？
+        type: string
+    required:
+    - name
+    - systemPrompt
+    type: object
+  internal_api_handler.LoginRequest:
+    description: 用户登录请求体
+    properties:
+      email:
+        description: 用户邮箱
+        example: user@example.com
+        type: string
+      password:
+        description: 用户密码
+        example: password123
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  internal_api_handler.RefreshRequest:
+    description: Token 刷新请求体
+    properties:
+      token:
+        description: 过期的 JWT token
+        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        type: string
+    type: object
+  internal_api_handler.RegisterRequest:
+    description: 用户注册请求体
+    properties:
+      email:
+        description: 用户邮箱
+        example: user@example.com
+        type: string
+      name:
+        description: 用户名称
+        example: 张三
+        type: string
+      password:
+        description: 用户密码 (至少 6 位)
+        example: password123
+        minLength: 6
+        type: string
+    required:
+    - email
+    - name
+    - password
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@rolecraft.ai
+    name: API Support
+  description: AI 角色管理平台 API 文档
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  termsOfService: http://swagger.io/terms/
+  title: RoleCraft AI API
+  version: "1.0"
+paths:
+  /api/v1/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: 使用邮箱和密码登录，返回 JWT token
+      parameters:
+      - description: 登录信息
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 登录成功，返回用户信息和 token
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: 邮箱或密码错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 用户登录
+      tags:
+      - 认证
+  /api/v1/auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: 使用过期的 JWT token 换取新的 token (支持 Authorization header 或 JSON body)
+      parameters:
+      - description: Bearer {token}
+        in: header
+        name: Authorization
+        type: string
+      - description: Token (如果 header 中没有提供)
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api_handler.RefreshRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 刷新成功，返回新 token
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 缺少 token
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Token 无效或用户不存在
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 刷新 JWT Token
+      tags:
+      - 认证
+  /api/v1/auth/register:
+    post:
+      consumes:
+      - application/json
+      description: 创建新用户账户并返回 JWT token
+      parameters:
+      - description: 注册信息
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 注册成功，返回用户信息和 token
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 邮箱已存在
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 用户注册
+      tags:
+      - 认证
+  /api/v1/roles:
+    get:
+      description: 获取所有角色，支持分类筛选和模板筛选
+      parameters:
+      - description: 分类筛选
+        in: query
+        name: category
+        type: string
+      - description: 是否仅返回模板 (true/false)
+        in: query
+        name: template
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 角色列表
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取角色列表
+      tags:
+      - 角色
+    post:
+      consumes:
+      - application/json
+      description: 创建一个新的 AI 角色
+      parameters:
+      - description: 角色信息
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.CreateRoleRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 创建成功
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建角色
+      tags:
+      - 角色
+  /api/v1/roles/{id}:
+    delete:
+      description: 删除指定的角色
+      parameters:
+      - description: 角色 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除成功
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除角色
+      tags:
+      - 角色
+    get:
+      description: 根据 ID 获取单个角色的详细信息
+      parameters:
+      - description: 角色 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 角色详情
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 角色不存在
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取角色详情
+      tags:
+      - 角色
+    put:
+      consumes:
+      - application/json
+      description: 更新指定角色的信息
+      parameters:
+      - description: 角色 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 角色信息
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.CreateRoleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新成功
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 角色不存在
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新角色
+      tags:
+      - 角色
+  /api/v1/roles/{id}/chat:
+    post:
+      consumes:
+      - application/json
+      description: 发送消息给指定角色并获取 AI 回复
+      parameters:
+      - description: 角色 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 对话内容
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.ChatRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 对话响应
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 角色不存在
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 与角色对话
+      tags:
+      - 角色
+  /api/v1/roles/templates:
+    get:
+      description: 获取系统内置的角色模板 (无需认证)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 角色模板列表
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 获取角色模板
+      tags:
+      - 角色
+securityDefinitions:
+  BearerAuth:
+    description: 使用 JWT Token 进行认证，格式："Bearer {token}"
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
