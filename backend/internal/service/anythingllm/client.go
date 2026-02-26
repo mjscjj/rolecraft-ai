@@ -408,7 +408,17 @@ func (c *Client) DeleteChatHistory(userId string) error {
 }
 
 // UpdateWorkspaceSystemPrompt updates the system prompt for a workspace
+// Uses POST /v1/workspace/:slug/update endpoint
 func (c *Client) UpdateWorkspaceSystemPrompt(slug, systemPrompt string) error {
+	// First, try to get the workspace
+	_, err := c.GetWorkspaceBySlug(slug)
+	if err != nil {
+		// Workspace doesn't exist, create it
+		_, err := c.CreateWorkspaceBySlug(slug, slug, systemPrompt)
+		return err
+	}
+	
+	// Workspace exists, update settings via POST /workspace/:slug/update
 	reqBody := UpdateWorkspaceRequest{
 		SystemPrompt: systemPrompt,
 	}
@@ -419,7 +429,7 @@ func (c *Client) UpdateWorkspaceSystemPrompt(slug, systemPrompt string) error {
 	}
 	
 	ctx := context.Background()
-	resp, err := c.doRequest(ctx, http.MethodPatch, fmt.Sprintf("/workspace/%s", slug), bytes.NewReader(jsonData), "application/json")
+	resp, err := c.doRequest(ctx, http.MethodPost, fmt.Sprintf("/workspace/%s/update", slug), bytes.NewReader(jsonData), "application/json")
 	if err != nil {
 		return err
 	}
@@ -435,4 +445,65 @@ func (c *Client) UpdateWorkspaceSystemPrompt(slug, systemPrompt string) error {
 	}
 	
 	return nil
+}
+
+// GetWorkspaceBySlug retrieves a workspace by its slug
+func (c *Client) GetWorkspaceBySlug(slug string) (*Workspace, error) {
+	ctx := context.Background()
+	resp, err := c.doRequest(ctx, http.MethodGet, fmt.Sprintf("/workspace/%s", slug), nil, "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	
+	var result GetWorkspaceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	
+	if result.Error != "" {
+		return nil, fmt.Errorf("api error: %s", result.Error)
+	}
+	
+	if result.Workspace == nil {
+		return nil, fmt.Errorf("workspace not found")
+	}
+	
+	return result.Workspace, nil
+}
+
+// CreateWorkspaceBySlug creates a new workspace with specific slug
+func (c *Client) CreateWorkspaceBySlug(slug, name, systemPrompt string) (*Workspace, error) {
+	reqBody := CreateWorkspaceRequest{
+		Name:         name,
+		Slug:         slug,
+		SystemPrompt: systemPrompt,
+	}
+	
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+	
+	ctx := context.Background()
+	resp, err := c.doRequest(ctx, http.MethodPost, "/workspace/new", bytes.NewReader(jsonData), "application/json")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	
+	var result CreateWorkspaceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	
+	if result.Error != "" {
+		return nil, fmt.Errorf("api error: %s", result.Error)
+	}
+	
+	if result.Workspace == nil {
+		return nil, fmt.Errorf("no workspace returned")
+	}
+	
+	return result.Workspace, nil
 }

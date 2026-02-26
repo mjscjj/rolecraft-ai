@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 
@@ -145,11 +146,25 @@ func (h *RoleHandler) Create(c *gin.Context) {
 	go func() {
 		client := anythingllm.NewAnythingLLMClient(h.anythingllmURL, h.anythingllmKey)
 		slug := client.GetWorkspaceSlug(role.ID)
-		err := client.UpdateWorkspaceSystemPrompt(slug, role.SystemPrompt)
+		
+		// 尝试获取现有 workspace
+		_, err := client.GetWorkspaceBySlug(slug)
 		if err != nil {
-			log.Printf("⚠️ 角色 [%s] 同步到 AnythingLLM 失败：%v", role.Name, err)
+			// Workspace 不存在，创建新的
+			_, err = client.CreateWorkspaceBySlug(slug, fmt.Sprintf("Role: %s", role.Name), role.SystemPrompt)
+			if err != nil {
+				log.Printf("⚠️ 角色 [%s] 创建 AnythingLLM Workspace 失败：%v", role.Name, err)
+				return
+			}
+			log.Printf("✅ 角色 [%s] 已创建 AnythingLLM Workspace", role.Name)
 		} else {
-			log.Printf("✅ 角色 [%s] 已同步到 AnythingLLM", role.Name)
+			// Workspace 已存在，更新系统提示词
+			err = client.UpdateWorkspaceSystemPrompt(slug, role.SystemPrompt)
+			if err != nil {
+				log.Printf("⚠️ 角色 [%s] 更新 AnythingLLM Workspace 失败：%v", role.Name, err)
+			} else {
+				log.Printf("✅ 角色 [%s] 已更新 AnythingLLM Workspace", role.Name)
+			}
 		}
 	}()
 
@@ -205,11 +220,25 @@ func (h *RoleHandler) Update(c *gin.Context) {
 	go func() {
 		client := anythingllm.NewAnythingLLMClient(h.anythingllmURL, h.anythingllmKey)
 		slug := client.GetWorkspaceSlug(role.ID)
-		err := client.UpdateWorkspaceSystemPrompt(slug, role.SystemPrompt)
+		
+		// 尝试获取现有 workspace
+		_, err := client.GetWorkspaceBySlug(slug)
 		if err != nil {
-			log.Printf("⚠️ 角色 [%s] 同步到 AnythingLLM 失败：%v", role.Name, err)
+			// Workspace 不存在，创建新的
+			_, err = client.CreateWorkspaceBySlug(slug, fmt.Sprintf("Role: %s", role.Name), role.SystemPrompt)
+			if err != nil {
+				log.Printf("⚠️ 角色 [%s] 创建 AnythingLLM Workspace 失败：%v", role.Name, err)
+				return
+			}
+			log.Printf("✅ 角色 [%s] 已创建 AnythingLLM Workspace", role.Name)
 		} else {
-			log.Printf("✅ 角色 [%s] 已同步到 AnythingLLM", role.Name)
+			// Workspace 已存在，更新系统提示词
+			err = client.UpdateWorkspaceSystemPrompt(slug, role.SystemPrompt)
+			if err != nil {
+				log.Printf("⚠️ 角色 [%s] 更新 AnythingLLM Workspace 失败：%v", role.Name, err)
+			} else {
+				log.Printf("✅ 角色 [%s] 已更新 AnythingLLM Workspace", role.Name)
+			}
 		}
 	}()
 
