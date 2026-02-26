@@ -27,4 +27,3 @@ Thumbs.db
 # E2E 测试截图
 frontend/e2e/screenshots/
 frontend/playwright-report/
-*.spec.ts
