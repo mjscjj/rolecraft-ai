@@ -7,19 +7,20 @@ import (
 	"github.com/google/uuid"
 )
 
-// JSON 通用JSON类型 (SQLite 兼容 - 存储为 TEXT)
+// JSON 通用 JSON 类型 (SQLite 兼容 - 存储为 TEXT)
 type JSON string
 
 // User 用户模型
 type User struct {
-	ID            string    `json:"id" gorm:"primaryKey"`
-	Email         string    `json:"email" gorm:"uniqueIndex;not null"`
-	PasswordHash  string    `json:"-" gorm:"not null"`
-	Name          string    `json:"name"`
-	Avatar        string    `json:"avatar"`
-	EmailVerified bool      `json:"emailVerified" gorm:"default:false"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
+	ID              string    `json:"id" gorm:"primaryKey"`
+	Email           string    `json:"email" gorm:"uniqueIndex;not null"`
+	PasswordHash    string    `json:"-" gorm:"not null"`
+	Name            string    `json:"name"`
+	Avatar          string    `json:"avatar"`
+	AnythingLLMSlug string    `json:"anythingLLMSlug" gorm:"index"` // 新增：Workspace slug
+	EmailVerified   bool      `json:"emailVerified" gorm:"default:false"`
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
 }
 
 // Workspace 工作空间
@@ -35,23 +36,21 @@ type Workspace struct {
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
-// Role AI角色
+// Role AI 角色 - 简化模型
 type Role struct {
-	ID             string     `json:"id" gorm:"primaryKey"`
-	WorkspaceID    string     `json:"workspaceId"`
-	Name           string     `json:"name"`
-	Avatar         string     `json:"avatar"`
-	Description    string     `json:"description"`
-	Category       string     `json:"category"`
-	SystemPrompt   string     `json:"systemPrompt"`
-	WelcomeMessage string     `json:"welcomeMessage"`
-	ModelConfig    JSON       `json:"modelConfig" gorm:"type:text"`
-	IsTemplate     bool       `json:"isTemplate" gorm:"default:false"`
-	IsPublic       bool       `json:"isPublic" gorm:"default:false"`
-	Skills         []Skill    `json:"skills" gorm:"many2many:role_skills;"`
-	Documents      []Document `json:"documents" gorm:"many2many:role_documents;"`
-	CreatedAt      time.Time  `json:"createdAt"`
-	UpdatedAt      time.Time  `json:"updatedAt"`
+	ID             string    `json:"id" gorm:"primaryKey"`
+	UserID         string    `json:"userId" gorm:"index;not null"` // 关联用户
+	Name           string    `json:"name"`
+	Avatar         string    `json:"avatar"`
+	Description    string    `json:"description"`
+	Category       string    `json:"category"`
+	SystemPrompt   string    `json:"systemPrompt"`
+	WelcomeMessage string    `json:"welcomeMessage"`
+	ModelConfig    JSON      `json:"modelConfig" gorm:"type:text"`
+	IsTemplate     bool      `json:"isTemplate" gorm:"default:false"`
+	IsPublic       bool      `json:"isPublic" gorm:"default:false"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
 }
 
 // Skill 技能
@@ -63,39 +62,39 @@ type Skill struct {
 	CreatedAt   time.Time `json:"createdAt"`
 }
 
-// Document 文档
+// Document 文档 - 添加 AnythingLLM 关联
 type Document struct {
-	ID           string    `json:"id" gorm:"primaryKey"`
-	WorkspaceID  string    `json:"workspaceId"`
-	Name         string    `json:"name"`
-	FileType     string    `json:"fileType"`
-	FileSize     int64     `json:"fileSize"`
-	FilePath     string    `json:"filePath"`
-	Status       string    `json:"status" gorm:"default:'pending'"`
-	ChunkCount   int       `json:"chunkCount"`
-	ErrorMessage string    `json:"errorMessage"`
-	Metadata     JSON      `json:"metadata" gorm:"type:text"`
-	CreatedAt    time.Time `json:"createdAt"`
-	UpdatedAt    time.Time `json:"updatedAt"`
+	ID              string    `json:"id" gorm:"primaryKey"`
+	UserID          string    `json:"userId" gorm:"index;not null"`
+	Name            string    `json:"name"`
+	FileType        string    `json:"fileType"`
+	FileSize        int64     `json:"fileSize"`
+	FilePath        string    `json:"filePath"` // 临时存储路径
+	AnythingLLMHash string    `json:"anythingLLMHash" gorm:"index"` // 新增：AnythingLLM 文档 hash
+	Status          string    `json:"status" gorm:"default:'pending'"` // pending/processing/completed/failed
+	ChunkCount      int       `json:"chunkCount"`
+	ErrorMessage    string    `json:"errorMessage"`
+	Metadata        JSON      `json:"metadata" gorm:"type:text"`
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
 }
 
-// ChatSession 对话会话
+// ChatSession 对话会话 - 添加关联
 type ChatSession struct {
-	ID        string    `json:"id" gorm:"primaryKey"`
-	RoleID    string    `json:"roleId"`
-	UserID    string    `json:"userId"`
-	Title     string    `json:"title"`
-	Mode      string    `json:"mode" gorm:"default:'quick'"`
-	Role      *Role     `json:"role,omitempty" gorm:"foreignKey:RoleID"`
-	Messages  []Message `json:"messages" gorm:"foreignKey:SessionID"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID              string    `json:"id" gorm:"primaryKey"`
+	UserID          string    `json:"userId" gorm:"index;not null"`
+	RoleID          string    `json:"roleId" gorm:"index"`
+	Title           string    `json:"title"`
+	Mode            string    `json:"mode" gorm:"default:'quick'"` // quick/task
+	AnythingLLMSlug string    `json:"anythingLLMSlug" gorm:"index"` // 新增：关联 Workspace
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
 }
 
 // Message 消息
 type Message struct {
 	ID         string    `json:"id" gorm:"primaryKey"`
-	SessionID  string    `json:"sessionId"`
+	SessionID  string    `json:"sessionId" gorm:"index"`
 	Role       string    `json:"role"`
 	Content    string    `json:"content"`
 	Sources    JSON      `json:"sources" gorm:"type:text"`

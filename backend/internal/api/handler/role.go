@@ -48,7 +48,7 @@ type CreateRoleRequest struct {
 func (h *RoleHandler) List(c *gin.Context) {
 	var roles []models.Role
 
-	query := h.db.Preload("Skills").Preload("Documents")
+	query := h.db
 
 	// 分类筛选
 	if category := c.Query("category"); category != "" {
@@ -87,7 +87,7 @@ func (h *RoleHandler) Get(c *gin.Context) {
 	id := c.Param("id")
 
 	var role models.Role
-	if result := h.db.Preload("Skills").Preload("Documents").First(&role, "id = ?", id); result.Error != nil {
+	if result := h.db.First(&role, "id = ?", id); result.Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "role not found"})
 		return
 	}

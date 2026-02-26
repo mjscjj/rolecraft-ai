@@ -110,6 +110,7 @@ func main() {
 			docHandler := handler.NewDocumentHandler(db)
 			authorized.GET("/documents", docHandler.List)
 			authorized.POST("/documents", docHandler.Upload)
+			authorized.POST("/documents/search", docHandler.Search)
 			authorized.GET("/documents/:id", docHandler.Get)
 			authorized.PUT("/documents/:id", docHandler.Update)
 			authorized.DELETE("/documents/:id", docHandler.Delete)
@@ -119,8 +120,10 @@ func main() {
 			authorized.GET("/chat-sessions", chatHandler.ListSessions)
 			authorized.POST("/chat-sessions", chatHandler.CreateSession)
 			authorized.GET("/chat-sessions/:id", chatHandler.GetSession)
-			authorized.POST("/chat/:id/complete", chatHandler.Chat)
-			authorized.POST("/chat/:id/stream", chatHandler.ChatStream)
+			authorized.GET("/chat-sessions/:id/sync", chatHandler.WorkspaceAuth(), chatHandler.SyncSession)
+			authorized.DELETE("/chat-sessions/:id/messages/:msgId", chatHandler.WorkspaceAuth(), chatHandler.DeleteMessage)
+			authorized.POST("/chat/:id/complete", chatHandler.WorkspaceAuth(), chatHandler.Chat)
+			authorized.POST("/chat/:id/stream", chatHandler.WorkspaceAuth(), chatHandler.ChatStream)
 		}
 	}
 

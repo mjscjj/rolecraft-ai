@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -11,47 +14,45 @@ import (
 
 	"rolecraft-ai/internal/config"
 	"rolecraft-ai/internal/models"
-	"rolecraft-ai/internal/service/ai"
 )
 
 // ChatHandler 对话处理器
 type ChatHandler struct {
 	db     *gorm.DB
 	config *config.Config
-	openai *ai.OpenAIClient
-	mock   *ai.MockAIClient
 }
 
 // NewChatHandler 创建对话处理器
 func NewChatHandler(db *gorm.DB, cfg *config.Config) *ChatHandler {
-	var openaiClient *ai.OpenAIClient
-	if cfg.OpenAIKey != "" {
-		openaiClient = ai.NewOpenAIClient(ai.OpenAIConfig{
-			APIKey: cfg.OpenAIKey,
-			Model:  "gpt-4",
-		})
-	}
-	// 始终初始化 Mock AI 用于开发和测试
-	mockClient := ai.NewMockAIClient()
 	return &ChatHandler{
 		db:     db,
 		config: cfg,
-		openai: openaiClient,
-		mock:   mockClient,
 	}
 }
 
 // CreateSessionRequest 创建会话请求
 type CreateSessionRequest struct {
-	RoleID string `json:"roleId" binding:"required"`
-	Title  string `json:"title"`
-	Mode   string `json:"mode"`
+	RoleID          string `json:"roleId" binding:"required"`
+	Title           string `json:"title"`
+	Mode            string `json:"mode"`
+	AnythingLLMSlug string `json:"anythingLLMSlug"` // AnythingLLM Workspace Slug
 }
 
 // SendMessageRequest 发送消息请求
 type SendMessageRequest struct {
 	Content     string   `json:"content" binding:"required"`
 	Attachments []string `json:"attachments"`
+}
+
+// AnythingLLMChatRequest AnythingLLM 聊天请求
+type AnythingLLMChatRequest struct {
+	Message string `json:"message"`
+	Mode    string `json:"mode,omitempty"`
+}
+
+// AnythingLLMChatResponse AnythingLLM 聊天响应
+type AnythingLLMChatResponse struct {
+	Response string `json:"response"`
 }
 
 // ListSessions 获取对话会话列表
@@ -106,6 +107,11 @@ func (h *ChatHandler) CreateSession(c *gin.Context) {
 		UpdatedAt: time.Now(),
 	}
 
+	// 存储 AnythingLLM Slug
+	if req.AnythingLLMSlug != "" {
+		session.AnythingLLMSlug = req.AnythingLLMSlug
+	}
+
 	if result := h.db.Create(&session); result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 		return
@@ -142,7 +148,74 @@ func (h *ChatHandler) GetSession(c *gin.Context) {
 	})
 }
 
-// Chat 发送消息（普通响应）
+// getAnythingLLMSlug 获取会话的 AnythingLLM Slug
+func (h *ChatHandler) getAnythingLLMSlug(session models.ChatSession) (string, error) {
+	// 优先从会话字段获取
+	if session.AnythingLLMSlug != "" {
+		return session.AnythingLLMSlug, nil
+	}
+
+	// 从角色元数据获取
+	var role models.Role
+	if result := h.db.First(&role, "id = ?", session.RoleID); result.Error != nil {
+		return "", fmt.Errorf("role not found")
+	}
+
+	if role.ModelConfig != "" {
+		var modelConfig map[string]interface{}
+		if err := json.Unmarshal([]byte(role.ModelConfig), &modelConfig); err == nil {
+			if slug, ok := modelConfig["anythingllm_slug"].(string); ok && slug != "" {
+				return slug, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("anythingllm slug not found")
+}
+
+// callAnythingLLM 调用 AnythingLLM Chat API
+func (h *ChatHandler) callAnythingLLM(slug, message string) (string, error) {
+	url := fmt.Sprintf("%s/api/v1/workspace/%s/chat", h.config.AnythingLLMURL, slug)
+
+	reqBody := AnythingLLMChatRequest{
+		Message: message,
+		Mode:    "chat",
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+h.config.AnythingLLMKey)
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("anythingllm API error: %s (status: %d)", string(body), resp.StatusCode)
+	}
+
+	var chatResp AnythingLLMChatResponse
+	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return chatResp.Response, nil
+}
+
+// Chat 发送消息（普通响应）- 集成 AnythingLLM
 func (h *ChatHandler) Chat(c *gin.Context) {
 	userId, _ := c.Get("userId")
 	sessionId := c.Param("id")
@@ -159,6 +232,7 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 		return
 	}
 
+	// 保存用户消息
 	userMsg := models.Message{
 		ID:        models.NewUUID(),
 		SessionID: session.ID,
@@ -168,45 +242,26 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 	}
 	h.db.Create(&userMsg)
 
-	var history []models.Message
-	h.db.Where("session_id = ?", sessionId).Order("created_at ASC").Limit(20).Find(&history)
-
-	var role models.Role
-	if session.Role != nil {
-		role = *session.Role
-	} else {
-		h.db.First(&role, "id = ?", session.RoleID)
-	}
-
-	messages := []ai.ChatMessage{
-		{Role: "system", Content: role.SystemPrompt},
-	}
-	for _, msg := range history {
-		messages = append(messages, ai.ChatMessage{
-			Role:    msg.Role,
-			Content: msg.Content,
+	// 获取 AnythingLLM Slug
+	slug, err := h.getAnythingLLMSlug(session)
+	if err != nil {
+		// 如果没有配置 AnythingLLM，返回错误
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "anythingllm workspace not configured: " + err.Error(),
 		})
+		return
 	}
 
-	var assistantContent string
-	if h.openai != nil {
-		// 使用真实 OpenAI
-		resp, err := h.openai.ChatCompletion(c.Request.Context(), messages, 0.7)
-		if err != nil {
-			assistantContent = fmt.Sprintf("AI 服务错误：%v", err)
-		} else if len(resp.Choices) > 0 {
-			assistantContent = resp.Choices[0].Message.Content
-		}
-	} else {
-		// 使用 Mock AI（开发/测试模式）
-		resp, err := h.mock.ChatCompletion(c.Request.Context(), messages, 0.7)
-		if err != nil {
-			assistantContent = fmt.Sprintf("Mock AI 错误：%v", err)
-		} else if len(resp.Choices) > 0 {
-			assistantContent = resp.Choices[0].Message.Content
-		}
+	// 调用 AnythingLLM API
+	assistantContent, err := h.callAnythingLLM(slug, req.Content)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "anythingllm API error: " + err.Error(),
+		})
+		return
 	}
 
+	// 保存助手消息
 	assistantMsg := models.Message{
 		ID:        models.NewUUID(),
 		SessionID: session.ID,
@@ -216,6 +271,7 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 	}
 	h.db.Create(&assistantMsg)
 
+	// 更新会话时间
 	h.db.Model(&session).Update("updated_at", time.Now())
 
 	c.JSON(http.StatusOK, gin.H{
@@ -228,7 +284,7 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 	})
 }
 
-// ChatStream 发送消息（流式响应 SSE）
+// ChatStream 发送消息（流式响应 SSE）- 集成 AnythingLLM
 func (h *ChatHandler) ChatStream(c *gin.Context) {
 	userId, _ := c.Get("userId")
 	sessionId := c.Param("id")
@@ -245,6 +301,7 @@ func (h *ChatHandler) ChatStream(c *gin.Context) {
 		return
 	}
 
+	// 保存用户消息
 	userMsg := models.Message{
 		ID:        models.NewUUID(),
 		SessionID: session.ID,
@@ -254,9 +311,20 @@ func (h *ChatHandler) ChatStream(c *gin.Context) {
 	}
 	h.db.Create(&userMsg)
 
+	// 获取 AnythingLLM Slug
+	slug, err := h.getAnythingLLMSlug(session)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "anythingllm workspace not configured: " + err.Error(),
+		})
+		return
+	}
+
+	// 设置 SSE 响应头
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
 
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
@@ -264,91 +332,211 @@ func (h *ChatHandler) ChatStream(c *gin.Context) {
 		return
 	}
 
-	var history []models.Message
-	h.db.Where("session_id = ?", sessionId).Order("created_at ASC").Limit(20).Find(&history)
+	// 调用 AnythingLLM Stream API
+	url := fmt.Sprintf("%s/api/v1/workspace/%s/stream-chat", h.config.AnythingLLMURL, slug)
 
-	var role models.Role
-	if session.Role != nil {
-		role = *session.Role
-	} else {
-		h.db.First(&role, "id = ?", session.RoleID)
+	reqBody := AnythingLLMChatRequest{
+		Message: req.Content,
+		Mode:    "chat",
 	}
 
-	messages := []ai.ChatMessage{
-		{Role: "system", Content: role.SystemPrompt},
-	}
-	for _, msg := range history {
-		messages = append(messages, ai.ChatMessage{
-			Role:    msg.Role,
-			Content: msg.Content,
-		})
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to marshal request"})
+		return
 	}
 
-	var fullContent string
+	httpReq, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create request"})
+		return
+	}
 
-	if h.openai != nil {
-		chunkChan, errChan := h.openai.ChatCompletionStream(c.Request.Context(), messages, 0.7)
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+h.config.AnythingLLMKey)
 
-		for {
-			select {
-			case chunk, ok := <-chunkChan:
-				if !ok {
-					goto done
-				}
-				if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
-					content := chunk.Choices[0].Delta.Content
-					fullContent += content
-					data := map[string]interface{}{"content": content, "done": false}
-					jsonData, _ := json.Marshal(data)
-					fmt.Fprintf(c.Writer, "data: %s\n\n", jsonData)
-					flusher.Flush()
-				}
-			case err := <-errChan:
-				if err != nil {
-					data := map[string]interface{}{"error": err.Error(), "done": true}
-					jsonData, _ := json.Marshal(data)
-					fmt.Fprintf(c.Writer, "data: %s\n\n", jsonData)
-					flusher.Flush()
-				}
-				goto done
-			case <-c.Request.Context().Done():
-				goto done
+	client := &http.Client{}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to connect to anythingllm"})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("anythingllm error: %s", string(body))})
+		return
+	}
+
+	// 流式读取响应
+	var fullContent strings.Builder
+	decoder := json.NewDecoder(resp.Body)
+
+	for {
+		var chunk map[string]interface{}
+		if err := decoder.Decode(&chunk); err != nil {
+			if err == io.EOF {
+				break
 			}
+			// 发送错误到客户端
+			data := map[string]interface{}{"error": err.Error(), "done": true}
+			jsonData, _ := json.Marshal(data)
+			fmt.Fprintf(c.Writer, "data: %s\n\n", jsonData)
+			flusher.Flush()
+			break
 		}
-	done:
-	} else {
-		// 使用 Mock AI 流式响应
-		chunkChan, _ := h.mock.ChatCompletionStream(c.Request.Context(), messages, 0.7)
-		for chunk := range chunkChan {
-			if len(chunk.Choices) > 0 {
-				if chunk.Choices[0].Delta.Content != "" {
-					content := chunk.Choices[0].Delta.Content
-					fullContent += content
-					data := map[string]interface{}{"content": content, "done": false}
-					jsonData, _ := json.Marshal(data)
-					fmt.Fprintf(c.Writer, "data: %s\n\n", jsonData)
-					flusher.Flush()
-				}
-				if chunk.Choices[0].FinishReason == "stop" {
-					data := map[string]interface{}{"done": true}
-					jsonData, _ := json.Marshal(data)
-					fmt.Fprintf(c.Writer, "data: %s\n\n", jsonData)
-					flusher.Flush()
-					break
-				}
-			}
+
+		// 提取内容
+		if content, ok := chunk["response"].(string); ok && content != "" {
+			fullContent.WriteString(content)
+			data := map[string]interface{}{"content": content, "done": false}
+			jsonData, _ := json.Marshal(data)
+			fmt.Fprintf(c.Writer, "data: %s\n\n", jsonData)
+			flusher.Flush()
+		}
+
+		// 检查是否结束
+		if done, ok := chunk["done"].(bool); ok && done {
+			data := map[string]interface{}{"done": true}
+			jsonData, _ := json.Marshal(data)
+			fmt.Fprintf(c.Writer, "data: %s\n\n", jsonData)
+			flusher.Flush()
+			break
 		}
 	}
 
-	if fullContent != "" {
+	// 保存完整的助手消息
+	if fullContent.Len() > 0 {
 		assistantMsg := models.Message{
 			ID:        models.NewUUID(),
 			SessionID: session.ID,
 			Role:      "assistant",
-			Content:   fullContent,
+			Content:   fullContent.String(),
 			CreatedAt: time.Now(),
 		}
 		h.db.Create(&assistantMsg)
 		h.db.Model(&session).Update("updated_at", time.Now())
+	}
+}
+
+// SyncSession 从 AnythingLLM 同步对话历史
+func (h *ChatHandler) SyncSession(c *gin.Context) {
+	userId, _ := c.Get("userId")
+	sessionId := c.Param("id")
+
+	var session models.ChatSession
+	if result := h.db.Where("id = ? AND user_id = ?", sessionId, userId).First(&session); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		return
+	}
+
+	slug, err := h.getAnythingLLMSlug(session)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "anythingllm workspace not configured: " + err.Error(),
+		})
+		return
+	}
+
+	// 调用 AnythingLLM 获取历史对话 API
+	// 注意：AnythingLLM 可能需要特定的 API 端点来获取历史
+	url := fmt.Sprintf("%s/api/v1/workspace/%s/chats", h.config.AnythingLLMURL, slug)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create request"})
+		return
+	}
+
+	req.Header.Set("Authorization", "Bearer "+h.config.AnythingLLMKey)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch from anythingllm"})
+		return
+	}
+	defer resp.Body.Close()
+
+	var history []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&history); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse response"})
+		return
+	}
+
+	// 同步到本地数据库（可选）
+	// 这里可以根据需要实现具体的同步逻辑
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "success",
+		"data": gin.H{
+			"history": history,
+		},
+	})
+}
+
+// DeleteMessage 删除指定消息
+func (h *ChatHandler) DeleteMessage(c *gin.Context) {
+	userId, _ := c.Get("userId")
+	sessionId := c.Param("id")
+	messageId := c.Param("msgId")
+
+	// 验证会话属于用户
+	var session models.ChatSession
+	if result := h.db.Where("id = ? AND user_id = ?", sessionId, userId).First(&session); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		return
+	}
+
+	// 删除本地消息
+	var msg models.Message
+	if result := h.db.Where("id = ? AND session_id = ?", messageId, sessionId).First(&msg); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "message not found"})
+		return
+	}
+
+	if result := h.db.Delete(&msg); result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete message"})
+		return
+	}
+
+	// TODO: 同步删除到 AnythingLLM (如果 AnythingLLM 支持)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "success",
+		"data": gin.H{
+			"deleted": true,
+		},
+	})
+}
+
+// WorkspaceAuth Workspace 认证中间件
+func (h *ChatHandler) WorkspaceAuth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userId, exists := c.Get("userId")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+			c.Abort()
+			return
+		}
+
+		sessionId := c.Param("id")
+		if sessionId == "" {
+			c.Next()
+			return
+		}
+
+		// 验证会话属于当前用户
+		var session models.ChatSession
+		if result := h.db.Where("id = ? AND user_id = ?", sessionId, userId).First(&session); result.Error != nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": "access denied to this workspace"})
+			c.Abort()
+			return
+		}
+
+		c.Next()
 	}
 }
