@@ -182,9 +182,23 @@ func (m *MockAIClient) ChatCompletionStream(ctx context.Context, messages []Chat
 func (m *MockAIClient) categorizeMessage(message string) string {
 	message = strings.ToLower(message)
 
+	// 写作相关（优先检查，因为"写"字很常见）
+	if strings.Contains(message, "文案") || strings.Contains(message, "文章") || strings.Contains(message, "邮件") || 
+	   strings.Contains(message, "报告") || strings.Contains(message, "测试报告") {
+		return "writing"
+	}
+	if strings.Contains(message, "写") && !strings.Contains(message, "你好") {
+		return "writing"
+	}
+
 	// 问候
 	if strings.Contains(message, "你好") || strings.Contains(message, "嗨") || strings.Contains(message, "hello") || strings.Contains(message, "hi") {
-		return "greeting"
+		// 如果同时有其他请求，不算纯问候
+		if len(message) > 10 {
+			// 继续检查其他分类
+		} else {
+			return "greeting"
+		}
 	}
 
 	// 营销相关
@@ -192,13 +206,8 @@ func (m *MockAIClient) categorizeMessage(message string) string {
 		return "marketing"
 	}
 
-	// 写作相关
-	if strings.Contains(message, "写") || strings.Contains(message, "文案") || strings.Contains(message, "文章") || strings.Contains(message, "邮件") {
-		return "writing"
-	}
-
 	// 分析相关
-	if strings.Contains(message, "分析") || strings.Contains(message, "数据") || strings.Contains(message, "报告") || strings.Contains(message, "趋势") {
+	if strings.Contains(message, "分析") || strings.Contains(message, "数据") || strings.Contains(message, "趋势") {
 		return "analysis"
 	}
 
