@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"os"
@@ -141,6 +142,53 @@ func (h *DocumentHandler) Get(c *gin.Context) {
 	var document models.Document
 	if result := h.db.Where("id = ? AND workspace_id = ?", docId, userId).First(&document); result.Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "success",
+		"data":    document,
+	})
+}
+
+// Update 更新文档信息
+func (h *DocumentHandler) Update(c *gin.Context) {
+	userId, _ := c.Get("userId")
+	docId := c.Param("id")
+
+	var document models.Document
+	if result := h.db.Where("id = ? AND workspace_id = ?", docId, userId).First(&document); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+		return
+	}
+
+	var req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Name != "" {
+		document.Name = req.Name
+	}
+	if req.Description != "" {
+		if document.Metadata == "" {
+			document.Metadata = `{"description":""}`
+		}
+		var metadata map[string]interface{}
+		json.Unmarshal([]byte(document.Metadata), &metadata)
+		metadata["description"] = req.Description
+		data, _ := json.Marshal(metadata)
+		document.Metadata = models.JSON(data)
+	}
+
+	document.UpdatedAt = time.Now()
+	if result := h.db.Save(&document); result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 		return
 	}
 

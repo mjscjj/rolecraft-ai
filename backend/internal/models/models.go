@@ -76,6 +76,7 @@ type Document struct {
 	ErrorMessage string    `json:"errorMessage"`
 	Metadata     JSON      `json:"metadata" gorm:"type:text"`
 	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 // ChatSession 对话会话

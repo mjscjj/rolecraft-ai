@@ -111,6 +111,7 @@ func main() {
 			authorized.GET("/documents", docHandler.List)
 			authorized.POST("/documents", docHandler.Upload)
 			authorized.GET("/documents/:id", docHandler.Get)
+			authorized.PUT("/documents/:id", docHandler.Update)
 			authorized.DELETE("/documents/:id", docHandler.Delete)
 
 			// 对话
