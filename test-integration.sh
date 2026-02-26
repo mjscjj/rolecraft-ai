@@ -10,7 +10,7 @@ FRONTEND_URL="http://localhost:5173"
 
 # 1. 检查后端服务
 echo "1️⃣  检查后端服务..."
-if curl -s "$API_BASE/../health" | grep -q "ok"; then
+if curl -s "http://localhost:8080/health" | grep -q "ok"; then
     echo "   ✅ 后端服务正常"
 else
     echo "   ❌ 后端服务异常"
