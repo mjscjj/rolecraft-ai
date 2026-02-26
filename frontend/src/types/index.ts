@@ -18,6 +18,7 @@ export interface Role {
   welcomeMessage?: string;
   modelConfig?: Record<string, any>;
   isTemplate?: boolean;
+  skills?: Skill[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -55,9 +56,10 @@ export interface ChatSession {
 // 消息
 export interface Message {
   id: string;
-  sessionId: string;
+  sessionId?: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
+  sources?: string[];
   createdAt: string;
 }
 

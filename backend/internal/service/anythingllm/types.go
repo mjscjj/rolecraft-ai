@@ -139,6 +139,25 @@ type GetChatHistoryResponse struct {
 	Error   string            `json:"error,omitempty"`
 }
 
+// DeleteChatHistoryResponse represents the response from deleting chat history
+type DeleteChatHistoryResponse struct {
+	Message string `json:"message,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+// UpdateWorkspaceRequest represents the request to update a workspace
+type UpdateWorkspaceRequest struct {
+	Name         string `json:"name,omitempty"`
+	SystemPrompt string `json:"systemPrompt,omitempty"`
+}
+
+// UpdateWorkspaceResponse represents the response from updating a workspace
+type UpdateWorkspaceResponse struct {
+	Workspace *Workspace `json:"workspace,omitempty"`
+	Message   string     `json:"message,omitempty"`
+	Error     string     `json:"error,omitempty"`
+}
+
 // APIError represents an API error response
 type APIError struct {
 	Error   string `json:"error"`

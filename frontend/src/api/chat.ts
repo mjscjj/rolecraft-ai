@@ -129,6 +129,26 @@ export const chatApi = {
       }
     }
   },
+
+  // 切换角色
+  switchRole: async (sessionId: string, roleId: string): Promise<{
+    sessionId: string;
+    oldRoleId: string;
+    newRoleId: string;
+    newRoleName: string;
+  }> => {
+    try {
+      const response = await client.post<ApiResponse<{
+        sessionId: string;
+        oldRoleId: string;
+        newRoleId: string;
+        newRoleName: string;
+      }>>(`/chat-sessions/${sessionId}/switch-role`, { roleId });
+      return response.data.data;
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
 };
 
 export default chatApi;

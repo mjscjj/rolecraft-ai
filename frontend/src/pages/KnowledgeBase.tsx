@@ -3,14 +3,12 @@ import { useState, useEffect } from 'react';
 import { 
   Upload, 
   FileText, 
-  MoreVertical, 
   Search, 
   Trash2,
   Edit2,
   CheckCircle,
   Clock,
-  AlertCircle,
-  X
+  AlertCircle
 } from 'lucide-react';
 
 const API_BASE = 'http://localhost:8080/api/v1';
@@ -39,7 +37,7 @@ const getStatusIcon = (status: string) => {
     case 'completed':
       return <CheckCircle className="w-5 h-5 text-green-500" />;
     case 'processing':
-      return <Clock className="w-5 h-5 text-blue-500" />;
+      return <Clock className="w-5 h-5 text-blue-500 animate-spin" />;
     case 'failed':
       return <AlertCircle className="w-5 h-5 text-red-500" />;
     default:
@@ -57,6 +55,21 @@ const getStatusText = (status: string) => {
       return '处理失败';
     default:
       return '等待中';
+  }
+};
+
+const getStatusProgress = (status: string): number => {
+  switch (status) {
+    case 'pending':
+      return 0;
+    case 'processing':
+      return 50;
+    case 'completed':
+      return 100;
+    case 'failed':
+      return -1;
+    default:
+      return 0;
   }
 };
 
@@ -80,6 +93,7 @@ export const KnowledgeBase: FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingDoc, setEditingDoc] = useState<Document | null>(null);
   const [editName, setEditName] = useState('');
+  const [pollingDocs, setPollingDocs] = useState<Set<string>>(new Set());
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
 
@@ -87,6 +101,20 @@ export const KnowledgeBase: FC = () => {
   useEffect(() => {
     loadDocuments();
   }, []);
+
+  // 轮询处理中的文档状态
+  useEffect(() => {
+    const processingDocs = documents.filter(d => d.status === 'processing');
+    if (processingDocs.length === 0) return;
+
+    const interval = setInterval(() => {
+      processingDocs.forEach(doc => {
+        pollDocumentStatus(doc.id);
+      });
+    }, 2000); // 2 秒轮询一次
+
+    return () => clearInterval(interval);
+  }, [documents]);
 
   const loadDocuments = async () => {
     if (!token) return;
@@ -102,6 +130,35 @@ export const KnowledgeBase: FC = () => {
       console.error('Failed to load documents:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 轮询单个文档状态
+  const pollDocumentStatus = async (docId: string) => {
+    if (!token || pollingDocs.has(docId)) return;
+    
+    setPollingDocs(prev => new Set(prev).add(docId));
+    
+    try {
+      const res = await fetch(`${API_BASE}/documents/${docId}/status`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.data) {
+        setDocuments(prev => prev.map(doc => 
+          doc.id === docId 
+            ? { ...doc, status: data.data.status, updatedAt: data.data.updatedAt }
+            : doc
+        ));
+      }
+    } catch (err) {
+      console.error('Failed to poll status:', err);
+    } finally {
+      setPollingDocs(prev => {
+        const next = new Set(prev);
+        next.delete(docId);
+        return next;
+      });
     }
   };
 
@@ -281,7 +338,17 @@ export const KnowledgeBase: FC = () => {
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-2">
                       {getStatusIcon(doc.status)}
-                      <span className="text-sm text-slate-600">{getStatusText(doc.status)}</span>
+                      <div className="flex-1">
+                        <span className="text-sm text-slate-600">{getStatusText(doc.status)}</span>
+                        {doc.status === 'processing' && (
+                          <div className="w-24 mt-1 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                            <div 
+                              className="bg-blue-500 h-1.5 rounded-full transition-all duration-500"
+                              style={{ width: `${getStatusProgress(doc.status)}%` }}
+                            />
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </td>
                   <td className="py-3 px-4">

@@ -1,7 +1,10 @@
 import type { FC } from 'react';
 import { useState, useRef, useEffect } from 'react';
-import { Send, Paperclip, MoreVertical, Copy, RotateCcw, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Send, Paperclip, MoreVertical, Copy, RotateCcw, ThumbsUp, ThumbsDown, ChevronDown, Sparkles } from 'lucide-react';
 import type { Message } from '../types';
+import { roleApi } from '../api/role';
+import { chatApi } from '../api/chat';
+import './Chat.css';
 
 const API_BASE = 'http://localhost:8080/api/v1';
 
@@ -15,7 +18,13 @@ export const Chat: FC<ChatProps> = ({ roleId, roleName = 'AI 助手' }) => {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [currentRoleId, setCurrentRoleId] = useState<string>(roleId || '');
+  const [currentRoleName, setCurrentRoleName] = useState<string>(roleName);
+  const [availableRoles, setAvailableRoles] = useState<any[]>([]);
+  const [showRoleSelector, setShowRoleSelector] = useState(false);
+  const [isSwitching, setIsSwitching] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const roleSelectorRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -24,6 +33,40 @@ export const Chat: FC<ChatProps> = ({ roleId, roleName = 'AI 助手' }) => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // 点击外部关闭角色选择器
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (roleSelectorRef.current && !roleSelectorRef.current.contains(event.target as Node)) {
+        setShowRoleSelector(false);
+      }
+    };
+
+    if (showRoleSelector) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showRoleSelector]);
+
+  // 加载可用角色列表
+  useEffect(() => {
+    const loadRoles = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+
+        const roles = await roleApi.list();
+        setAvailableRoles(roles);
+      } catch (err) {
+        console.error('Failed to load roles:', err);
+      }
+    };
+
+    loadRoles();
+  }, []);
 
   // 初始化会话
   useEffect(() => {
@@ -43,6 +86,7 @@ export const Chat: FC<ChatProps> = ({ roleId, roleName = 'AI 助手' }) => {
         const data = await res.json();
         if (data.data?.id) {
           setSessionId(data.data.id);
+          setCurrentRoleId(roleId);
           // 加载欢迎消息
           if (data.data.role?.welcomeMessage) {
             setMessages([{
@@ -120,16 +164,99 @@ export const Chat: FC<ChatProps> = ({ roleId, roleName = 'AI 助手' }) => {
     navigator.clipboard.writeText(content);
   };
 
+  const handleSwitchRole = async (newRoleId: string) => {
+    if (!sessionId || newRoleId === currentRoleId) return;
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      alert('请先登录');
+      return;
+    }
+
+    setIsSwitching(true);
+    setShowRoleSelector(false);
+
+    try {
+      const result = await chatApi.switchRole(sessionId, newRoleId);
+      
+      // 更新当前角色
+      setCurrentRoleId(result.newRoleId);
+      setCurrentRoleName(result.newRoleName);
+      
+      // 添加系统消息
+      const systemMessage: Message = {
+        id: `system-${Date.now()}`,
+        role: 'system',
+        content: `已切换到角色：${result.newRoleName}`,
+        createdAt: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, systemMessage]);
+      
+    } catch (err) {
+      console.error('Failed to switch role:', err);
+      alert('切换角色失败，请重试');
+    } finally {
+      setIsSwitching(false);
+    }
+  };
+
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col">
       {/* Chat Header */}
       <div className="flex items-center justify-between pb-4 border-b border-slate-200">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center text-white font-semibold">
-            {roleName[0]}
+          <div className={`w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center text-white font-semibold transition-all duration-300 role-avatar ${isSwitching ? 'switching' : ''}`}>
+            {currentRoleName[0]}
           </div>
           <div>
-            <h2 className="font-semibold text-slate-900">{roleName}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="font-semibold text-slate-900">{currentRoleName}</h2>
+              {sessionId && (
+                <div className="relative" ref={roleSelectorRef}>
+                  <button
+                    onClick={() => setShowRoleSelector(!showRoleSelector)}
+                    disabled={isSwitching}
+                    className="flex items-center gap-1 px-2 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded-md transition-colors disabled:opacity-50"
+                  >
+                    <Sparkles className="w-3 h-3 text-primary" />
+                    <span>切换</span>
+                    <ChevronDown className={`w-3 h-3 transition-transform ${showRoleSelector ? 'rotate-180' : ''}`} />
+                  </button>
+                  
+                  {/* Role Selector Dropdown */}
+                  {showRoleSelector && (
+                    <div className="absolute top-full left-0 mt-1 w-48 bg-white rounded-lg shadow-xl border border-slate-200 py-1 z-50 role-selector-dropdown">
+                      <div className="px-3 py-2 text-xs font-medium text-slate-500 border-b border-slate-100">
+                        选择角色
+                      </div>
+                      <div className="max-h-64 overflow-y-auto">
+                        {availableRoles.map((role) => (
+                          <button
+                            key={role.id}
+                            onClick={() => handleSwitchRole(role.id)}
+                            disabled={isSwitching || role.id === currentRoleId}
+                            className={`w-full text-left px-3 py-2.5 text-sm hover:bg-slate-50 transition-colors flex items-center gap-2 disabled:opacity-50 ${
+                              role.id === currentRoleId ? 'bg-primary/5 text-primary' : ''
+                            }`}
+                          >
+                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center text-white text-xs flex-shrink-0">
+                              {role.name[0]}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium truncate">{role.name}</div>
+                              <div className="text-xs text-slate-500 truncate">{role.category}</div>
+                            </div>
+                            {role.id === currentRoleId && (
+                              <div className="w-2 h-2 rounded-full bg-primary flex-shrink-0" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             <p className="text-xs text-slate-500">
               {sessionId ? '🟢 在线' : '🟡 连接中...'}
             </p>
@@ -149,7 +276,7 @@ export const Chat: FC<ChatProps> = ({ roleId, roleName = 'AI 助手' }) => {
       <div className="flex-1 overflow-y-auto py-6 space-y-6">
         {messages.length === 0 && !isLoading && (
           <div className="flex flex-col items-center justify-center h-full text-slate-400">
-            <p className="text-lg">👋 开始和 {roleName} 对话吧！</p>
+            <p className="text-lg">👋 开始和 {currentRoleName} 对话吧！</p>
             <p className="text-sm mt-2">输入问题或需求，AI 将为你提供帮助</p>
           </div>
         )}
@@ -157,74 +284,85 @@ export const Chat: FC<ChatProps> = ({ roleId, roleName = 'AI 助手' }) => {
         {messages.map((message) => (
           <div
             key={message.id}
-            className={`flex gap-4 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
+            className={`flex gap-4 ${
+              message.role === 'user' ? 'flex-row-reverse' : 
+              message.role === 'system' ? 'justify-center' : ''
+            }`}
           >
-            {/* Avatar */}
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-              message.role === 'user'
-                ? 'bg-slate-200 text-slate-600'
-                : 'bg-gradient-to-br from-primary to-primary-dark text-white'
-            }`}>
-              {message.role === 'user' ? 'U' : 'AI'}
-            </div>
-
-            {/* Message Content */}
-            <div className={`max-w-[70%] ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
-              <div className={`p-4 rounded-2xl ${
-                message.role === 'user'
-                  ? 'bg-slate-900 text-white rounded-tr-none'
-                  : 'bg-white border border-slate-200 rounded-tl-none shadow-sm'
-              }`}>
-                <div className={`prose prose-sm max-w-none ${
-                  message.role === 'user' ? 'prose-invert' : ''
+            {message.role === 'system' ? (
+              <div className="flex items-center gap-2 py-2 system-message">
+                <div className="h-px w-12 bg-slate-200" />
+                <div className="px-3 py-1 bg-slate-100 rounded-full text-xs text-slate-500 font-medium">
+                  {message.content}
+                </div>
+                <div className="h-px w-12 bg-slate-200" />
+              </div>
+            ) : (
+              <>
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                  message.role === 'user'
+                    ? 'bg-slate-200 text-slate-600'
+                    : 'bg-gradient-to-br from-primary to-primary-dark text-white'
                 }`}>
-                  {message.content.split('\n').map((line, i) => (
-                    <p key={i} className={line.trim() === '' ? 'h-2' : ''}>
-                      {line}
-                    </p>
-                  ))}
+                  {message.role === 'user' ? 'U' : 'AI'}
                 </div>
 
-                {/* Sources */}
-                {message.sources && message.sources.length > 0 && (
-                  <div className="mt-4 pt-3 border-t border-slate-200/20">
-                    <p className="text-xs opacity-70 mb-2">📚 参考来源：</p>
-                    <div className="flex flex-wrap gap-2">
-                      {message.sources.map((source, i) => (
-                        <span
-                          key={i}
-                          className="text-xs px-2 py-1 bg-white/10 rounded cursor-pointer hover:bg-white/20 transition-colors"
-                        >
-                          {source}
-                        </span>
+                <div className={`max-w-[70%] ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
+                  <div className={`p-4 rounded-2xl ${
+                    message.role === 'user'
+                      ? 'bg-slate-900 text-white rounded-tr-none'
+                      : 'bg-white border border-slate-200 rounded-tl-none shadow-sm'
+                  }`}>
+                    <div className={`prose prose-sm max-w-none ${
+                      message.role === 'user' ? 'prose-invert' : ''
+                    }`}>
+                      {message.content.split('\n').map((line, i) => (
+                        <p key={i} className={line.trim() === '' ? 'h-2' : ''}>
+                          {line}
+                        </p>
                       ))}
                     </div>
-                  </div>
-                )}
-              </div>
 
-              {/* Actions */}
-              {message.role === 'assistant' && (
-                <div className="flex items-center gap-1 mt-2 opacity-0 hover:opacity-100 transition-opacity">
-                  <button 
-                    onClick={() => handleCopy(message.content)}
-                    className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors" 
-                    title="复制"
-                  >
-                    <Copy className="w-4 h-4" />
-                  </button>
-                  <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors" title="重新生成">
-                    <RotateCcw className="w-4 h-4" />
-                  </button>
-                  <button className="p-1.5 text-slate-400 hover:text-green-500 hover:bg-green-50 rounded transition-colors" title="有用">
-                    <ThumbsUp className="w-4 h-4" />
-                  </button>
-                  <button className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors" title="无用">
-                    <ThumbsDown className="w-4 h-4" />
-                  </button>
+                    {message.sources && message.sources.length > 0 && (
+                      <div className="mt-4 pt-3 border-t border-slate-200/20">
+                        <p className="text-xs opacity-70 mb-2">📚 参考来源：</p>
+                        <div className="flex flex-wrap gap-2">
+                          {message.sources.map((source, i) => (
+                            <span
+                              key={i}
+                              className="text-xs px-2 py-1 bg-white/10 rounded cursor-pointer hover:bg-white/20 transition-colors"
+                            >
+                              {source}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {message.role === 'assistant' && (
+                    <div className="flex items-center gap-1 mt-2 opacity-0 hover:opacity-100 transition-opacity">
+                      <button 
+                        onClick={() => handleCopy(message.content)}
+                        className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors" 
+                        title="复制"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                      <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors" title="重新生成">
+                        <RotateCcw className="w-4 h-4" />
+                      </button>
+                      <button className="p-1.5 text-slate-400 hover:text-green-500 hover:bg-green-50 rounded transition-colors" title="有用">
+                        <ThumbsUp className="w-4 h-4" />
+                      </button>
+                      <button className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors" title="无用">
+                        <ThumbsDown className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </>
+            )}
           </div>
         ))}
 

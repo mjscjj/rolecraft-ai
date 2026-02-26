@@ -1,22 +1,31 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"rolecraft-ai/internal/config"
 	"rolecraft-ai/internal/models"
+	"rolecraft-ai/internal/service/anythingllm"
 )
 
 // RoleHandler 角色处理器
 type RoleHandler struct {
-	db *gorm.DB
+	db              *gorm.DB
+	anythingllmURL  string
+	anythingllmKey  string
 }
 
 // NewRoleHandler 创建角色处理器
-func NewRoleHandler(db *gorm.DB) *RoleHandler {
-	return &RoleHandler{db: db}
+func NewRoleHandler(db *gorm.DB, cfg *config.Config) *RoleHandler {
+	return &RoleHandler{
+		db:             db,
+		anythingllmURL: cfg.AnythingLLMURL,
+		anythingllmKey: cfg.AnythingLLMKey,
+	}
 }
 
 // CreateRoleRequest 创建角色请求
@@ -132,6 +141,18 @@ func (h *RoleHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// 异步同步到 AnythingLLM
+	go func() {
+		client := anythingllm.NewAnythingLLMClient(h.anythingllmURL, h.anythingllmKey)
+		slug := client.GetWorkspaceSlug(role.ID)
+		err := client.UpdateWorkspaceSystemPrompt(slug, role.SystemPrompt)
+		if err != nil {
+			log.Printf("⚠️ 角色 [%s] 同步到 AnythingLLM 失败：%v", role.Name, err)
+		} else {
+			log.Printf("✅ 角色 [%s] 已同步到 AnythingLLM", role.Name)
+		}
+	}()
+
 	c.JSON(http.StatusCreated, gin.H{
 		"code":    200,
 		"message": "success",
@@ -179,6 +200,18 @@ func (h *RoleHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 		return
 	}
+
+	// 异步同步到 AnythingLLM
+	go func() {
+		client := anythingllm.NewAnythingLLMClient(h.anythingllmURL, h.anythingllmKey)
+		slug := client.GetWorkspaceSlug(role.ID)
+		err := client.UpdateWorkspaceSystemPrompt(slug, role.SystemPrompt)
+		if err != nil {
+			log.Printf("⚠️ 角色 [%s] 同步到 AnythingLLM 失败：%v", role.Name, err)
+		} else {
+			log.Printf("✅ 角色 [%s] 已同步到 AnythingLLM", role.Name)
+		}
+	}()
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    200,

@@ -86,7 +86,7 @@ func main() {
 		}
 
 		// 角色模板 (公开)
-		roleHandler := handler.NewRoleHandler(db)
+		roleHandler := handler.NewRoleHandler(db, cfg)
 		api.GET("/roles/templates", roleHandler.GetTemplates)
 
 		// 需要认证的路由
@@ -112,6 +112,7 @@ func main() {
 			authorized.POST("/documents", docHandler.Upload)
 			authorized.POST("/documents/search", docHandler.Search)
 			authorized.GET("/documents/:id", docHandler.Get)
+			authorized.GET("/documents/:id/status", docHandler.GetStatus)
 			authorized.PUT("/documents/:id", docHandler.Update)
 			authorized.DELETE("/documents/:id", docHandler.Delete)
 
@@ -120,6 +121,7 @@ func main() {
 			authorized.GET("/chat-sessions", chatHandler.ListSessions)
 			authorized.POST("/chat-sessions", chatHandler.CreateSession)
 			authorized.GET("/chat-sessions/:id", chatHandler.GetSession)
+			authorized.POST("/chat-sessions/:id/switch-role", chatHandler.WorkspaceAuth(), chatHandler.SwitchRole)
 			authorized.GET("/chat-sessions/:id/sync", chatHandler.WorkspaceAuth(), chatHandler.SyncSession)
 			authorized.DELETE("/chat-sessions/:id/messages/:msgId", chatHandler.WorkspaceAuth(), chatHandler.DeleteMessage)
 			authorized.POST("/chat/:id/complete", chatHandler.WorkspaceAuth(), chatHandler.Chat)

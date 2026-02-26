@@ -188,10 +188,15 @@ jobs:
           chmod +x tests/run_all_tests.sh
           ./tests/run_all_tests.sh
 
+  e2e-integration-test:
+    name: E2E Integration Tests (Full Flow)
+    uses: ./.github/workflows/e2e-integration.yml
+    needs: [backend-test, frontend-test]
+
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: [e2e-test, integration-test]
+    needs: [e2e-test, integration-test, e2e-integration-test]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     
     steps:

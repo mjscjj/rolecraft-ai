@@ -13,6 +13,15 @@ export interface Document {
   createdAt: string;
 }
 
+// 文档状态类型
+export interface DocumentStatus {
+  id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  progress: number; // 0-100, -1 for failed
+  message: string;
+  updatedAt: string;
+}
+
 // 文档 API
 export const documentApi = {
   // 获取文档列表
@@ -49,6 +58,16 @@ export const documentApi = {
   get: async (id: string): Promise<Document> => {
     try {
       const response = await client.get<ApiResponse<Document>>(`/documents/${id}`);
+      return response.data.data;
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
+
+  // 获取文档处理状态
+  getStatus: async (id: string): Promise<DocumentStatus> => {
+    try {
+      const response = await client.get<ApiResponse<DocumentStatus>>(`/documents/${id}/status`);
       return response.data.data;
     } catch (error) {
       throw handleApiError(error);

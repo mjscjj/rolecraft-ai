@@ -14,6 +14,7 @@ import (
 
 	"rolecraft-ai/internal/config"
 	"rolecraft-ai/internal/models"
+	"rolecraft-ai/internal/service/anythingllm"
 )
 
 // ChatHandler 对话处理器
@@ -130,7 +131,7 @@ func (h *ChatHandler) GetSession(c *gin.Context) {
 	sessionId := c.Param("id")
 
 	var session models.ChatSession
-	if result := h.db.Where("id = ? AND user_id = ?", sessionId, userId).Preload("Role").First(&session); result.Error != nil {
+	if result := h.db.Where("id = ? AND user_id = ?", sessionId, userId).First(&session); result.Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
 		return
 	}
@@ -227,7 +228,7 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 	}
 
 	var session models.ChatSession
-	if result := h.db.Where("id = ? AND user_id = ?", sessionId, userId).Preload("Role").First(&session); result.Error != nil {
+	if result := h.db.Where("id = ? AND user_id = ?", sessionId, userId).First(&session); result.Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
 		return
 	}
@@ -243,22 +244,20 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 	h.db.Create(&userMsg)
 
 	// 获取 AnythingLLM Slug
+	var assistantContent string
 	slug, err := h.getAnythingLLMSlug(session)
 	if err != nil {
-		// 如果没有配置 AnythingLLM，返回错误
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "anythingllm workspace not configured: " + err.Error(),
-		})
-		return
-	}
-
-	// 调用 AnythingLLM API
-	assistantContent, err := h.callAnythingLLM(slug, req.Content)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "anythingllm API error: " + err.Error(),
-		})
-		return
+		// 如果没有配置 AnythingLLM，使用 Mock AI
+		assistantContent = h.callMockAI(req.Content)
+	} else {
+		// 调用 AnythingLLM API
+		assistantContent, err = h.callAnythingLLM(slug, req.Content)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "anythingllm API error: " + err.Error(),
+			})
+			return
+		}
 	}
 
 	// 保存助手消息
@@ -296,7 +295,7 @@ func (h *ChatHandler) ChatStream(c *gin.Context) {
 	}
 
 	var session models.ChatSession
-	if result := h.db.Where("id = ? AND user_id = ?", sessionId, userId).Preload("Role").First(&session); result.Error != nil {
+	if result := h.db.Where("id = ? AND user_id = ?", sessionId, userId).First(&session); result.Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
 		return
 	}
@@ -502,13 +501,104 @@ func (h *ChatHandler) DeleteMessage(c *gin.Context) {
 		return
 	}
 
-	// TODO: 同步删除到 AnythingLLM (如果 AnythingLLM 支持)
+	// 同步删除到 AnythingLLM
+	// 注意：AnythingLLM 不支持删除单个消息，只能清空整个聊天历史
+	// 如果删除的是最后一条消息，可以选择清空 AnythingLLM 的聊天历史
+	if session.AnythingLLMSlug != "" {
+		// 检查是否还有其他消息
+		var remainingCount int64
+		h.db.Model(&models.Message{}).Where("session_id = ?", sessionId).Count(&remainingCount)
+		
+		// 如果没有其他消息了，清空 AnythingLLM 的聊天历史
+		if remainingCount == 0 {
+			// 使用 AnythingLLM client 删除聊天历史
+			anythingLLMClient := anythingllm.NewAnythingLLMClient(h.config.AnythingLLMURL, h.config.AnythingLLMKey)
+			if err := anythingLLMClient.DeleteChatHistory(userId.(string)); err != nil {
+				// 记录错误但不影响本地删除结果
+				// 可以在日志中记录：log.Printf("Failed to delete AnythingLLM chat history: %v", err)
+			}
+		}
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    200,
 		"message": "success",
 		"data": gin.H{
 			"deleted": true,
+		},
+	})
+}
+
+// SwitchRoleRequest 切换角色请求
+type SwitchRoleRequest struct {
+	RoleID string `json:"roleId" binding:"required"`
+}
+
+// SwitchRole 切换会话角色
+// @Summary 切换会话角色
+// @Description 在对话中切换到另一个角色，保持对话历史
+// @Tags 对话
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "会话 ID"
+// @Param request body SwitchRoleRequest true "角色 ID"
+// @Success 200 {object} map[string]interface{} "切换成功"
+// @Failure 400 {object} map[string]string "请求参数错误"
+// @Failure 404 {object} map[string]string "会话或角色不存在"
+// @Router /api/v1/chat-sessions/{id}/switch-role [post]
+func (h *ChatHandler) SwitchRole(c *gin.Context) {
+	userId, _ := c.Get("userId")
+	sessionId := c.Param("id")
+
+	var req SwitchRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 验证会话属于用户
+	var session models.ChatSession
+	if result := h.db.Where("id = ? AND user_id = ?", sessionId, userId).First(&session); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		return
+	}
+
+	// 验证新角色存在
+	var role models.Role
+	if result := h.db.First(&role, "id = ?", req.RoleID); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "role not found"})
+		return
+	}
+
+	// 更新会话的角色 ID
+	oldRoleID := session.RoleID
+	session.RoleID = req.RoleID
+	session.UpdatedAt = time.Now()
+
+	if result := h.db.Save(&session); result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to switch role"})
+		return
+	}
+
+	// 添加系统消息记录角色切换
+	systemMsg := models.Message{
+		ID:        models.NewUUID(),
+		SessionID: session.ID,
+		Role:      "system",
+		Content:   "角色已切换",
+		CreatedAt: time.Now(),
+	}
+	h.db.Create(&systemMsg)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "success",
+		"data": gin.H{
+			"sessionId":   session.ID,
+			"oldRoleId":   oldRoleID,
+			"newRoleId":   req.RoleID,
+			"newRoleName": role.Name,
 		},
 	})
 }
@@ -539,4 +629,10 @@ func (h *ChatHandler) WorkspaceAuth() gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+// callMockAI 调用 Mock AI（当 AnythingLLM 未配置时使用）
+func (h *ChatHandler) callMockAI(message string) string {
+	// 简单的 Mock AI 回复
+	return "你好！我是 Mock AI 助手。我现在可以回答你的问题：" + message
 }

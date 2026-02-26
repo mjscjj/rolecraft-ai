@@ -32,3 +32,12 @@ frontend/playwright-report/
 功能清单.md
 知识库功能说明.md
 backend/main
+
+# Test reports and temporary docs
+E2E-*.md
+TASK*.md
+GAP-*.md
+ALIYUN-*.md
+ROLE_*.md
+frontend/test-results/
+*.db

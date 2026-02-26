@@ -28,9 +28,14 @@ func NewAnythingLLMClientWithConfig(config ClientConfig) *Client {
 	}
 }
 
-// getWorkspaceSlug generates the workspace slug for a user
-func (c *Client) getWorkspaceSlug(userId string) string {
+// GetWorkspaceSlug generates the workspace slug for a user
+func (c *Client) GetWorkspaceSlug(userId string) string {
 	return fmt.Sprintf("user_%s", userId)
+}
+
+// getWorkspaceSlug generates the workspace slug for a user (deprecated, use GetWorkspaceSlug)
+func (c *Client) getWorkspaceSlug(userId string) string {
+	return c.GetWorkspaceSlug(userId)
 }
 
 // doRequest performs an HTTP request with retry logic
@@ -376,4 +381,58 @@ func (c *Client) GetChatHistory(userId string, limit int) ([]ChatHistoryItem, er
 	}
 	
 	return result.History, nil
+}
+
+// DeleteChatHistory deletes chat history from the user's workspace
+// Note: AnythingLLM doesn't support deleting individual messages, only entire chat history
+func (c *Client) DeleteChatHistory(userId string) error {
+	slug := c.getWorkspaceSlug(userId)
+	
+	ctx := context.Background()
+	resp, err := c.doRequest(ctx, http.MethodDelete, fmt.Sprintf("/workspace/%s/chats", slug), nil, "")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	
+	var result DeleteChatHistoryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+	
+	if result.Error != "" {
+		return fmt.Errorf("api error: %s", result.Error)
+	}
+	
+	return nil
+}
+
+// UpdateWorkspaceSystemPrompt updates the system prompt for a workspace
+func (c *Client) UpdateWorkspaceSystemPrompt(slug, systemPrompt string) error {
+	reqBody := UpdateWorkspaceRequest{
+		SystemPrompt: systemPrompt,
+	}
+	
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+	
+	ctx := context.Background()
+	resp, err := c.doRequest(ctx, http.MethodPatch, fmt.Sprintf("/workspace/%s", slug), bytes.NewReader(jsonData), "application/json")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	
+	var result UpdateWorkspaceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+	
+	if result.Error != "" {
+		return fmt.Errorf("api error: %s", result.Error)
+	}
+	
+	return nil
 }

@@ -581,6 +581,76 @@ func (h *DocumentHandler) Update(c *gin.Context) {
 	})
 }
 
+// GetStatus 获取文档处理状态
+func (h *DocumentHandler) GetStatus(c *gin.Context) {
+	userId, exists := c.Get("userId")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userIdStr, ok := userId.(string)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid user id"})
+		return
+	}
+
+	docId := c.Param("id")
+
+	var document models.Document
+	if result := h.db.Where("id = ? AND user_id = ?", docId, userIdStr).First(&document); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+		return
+	}
+
+	// 返回简化状态信息
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "success",
+		"data": gin.H{
+			"id":        document.ID,
+			"status":    document.Status,
+			"progress":  calculateProgress(document.Status),
+			"message":   getStatusMessage(document),
+			"updatedAt": document.UpdatedAt,
+		},
+	})
+}
+
+// calculateProgress 根据状态计算进度百分比
+func calculateProgress(status string) int {
+	switch status {
+	case "pending":
+		return 0
+	case "processing":
+		return 50
+	case "completed":
+		return 100
+	case "failed":
+		return -1
+	default:
+		return 0
+	}
+}
+
+// getStatusMessage 获取状态描述信息
+func getStatusMessage(doc models.Document) string {
+	switch doc.Status {
+	case "pending":
+		return "等待处理"
+	case "processing":
+		return "正在上传到知识库并建立索引..."
+	case "completed":
+		return "处理完成，可用于智能对话"
+	case "failed":
+		if doc.ErrorMessage != "" {
+			return "处理失败：" + doc.ErrorMessage
+		}
+		return "处理失败"
+	default:
+		return "未知状态"
+	}
+}
+
 // Delete 删除文档
 func (h *DocumentHandler) Delete(c *gin.Context) {
 	userId, exists := c.Get("userId")
