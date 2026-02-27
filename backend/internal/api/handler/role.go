@@ -177,9 +177,11 @@ type EnhancedRoleTemplate struct {
 
 // List 获取角色列表
 func (h *RoleHandler) List(c *gin.Context) {
+	userID, _ := c.Get("userId")
+	userIDStr, _ := userID.(string)
 	var roles []models.Role
 
-	query := h.db
+	query := h.db.Where("user_id = ?", userIDStr)
 
 	// 分类筛选
 	if category := c.Query("category"); category != "" {
@@ -194,11 +196,6 @@ func (h *RoleHandler) List(c *gin.Context) {
 	// 只显示公开角色
 	if c.Query("public") == "true" {
 		query = query.Where("is_public = ?", true)
-	}
-
-	// 用户筛选
-	if userID := c.Query("userId"); userID != "" {
-		query = query.Where("user_id = ?", userID)
 	}
 
 	if result := query.Order("created_at DESC").Find(&roles); result.Error != nil {
@@ -216,10 +213,12 @@ func (h *RoleHandler) List(c *gin.Context) {
 
 // Get 获取单个角色
 func (h *RoleHandler) Get(c *gin.Context) {
+	userID, _ := c.Get("userId")
+	userIDStr, _ := userID.(string)
 	id := c.Param("id")
 
 	var role models.Role
-	if result := h.db.First(&role, "id = ?", id); result.Error != nil {
+	if result := h.db.First(&role, "id = ? AND user_id = ?", id, userIDStr); result.Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "role not found"})
 		return
 	}
@@ -233,6 +232,9 @@ func (h *RoleHandler) Get(c *gin.Context) {
 
 // Create 创建角色
 func (h *RoleHandler) Create(c *gin.Context) {
+	userID, _ := c.Get("userId")
+	userIDStr, _ := userID.(string)
+
 	var req CreateRoleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -241,6 +243,7 @@ func (h *RoleHandler) Create(c *gin.Context) {
 
 	role := models.Role{
 		ID:             models.NewUUID(),
+		UserID:         userIDStr,
 		Name:           req.Name,
 		Description:    req.Description,
 		Category:       req.Category,
@@ -274,6 +277,8 @@ func (h *RoleHandler) Create(c *gin.Context) {
 
 // Update 更新角色
 func (h *RoleHandler) Update(c *gin.Context) {
+	userID, _ := c.Get("userId")
+	userIDStr, _ := userID.(string)
 	id := c.Param("id")
 
 	var req CreateRoleRequest
@@ -283,7 +288,7 @@ func (h *RoleHandler) Update(c *gin.Context) {
 	}
 
 	var role models.Role
-	if result := h.db.First(&role, "id = ?", id); result.Error != nil {
+	if result := h.db.First(&role, "id = ? AND user_id = ?", id, userIDStr); result.Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "role not found"})
 		return
 	}
@@ -320,9 +325,11 @@ func (h *RoleHandler) Update(c *gin.Context) {
 
 // Delete 删除角色
 func (h *RoleHandler) Delete(c *gin.Context) {
+	userID, _ := c.Get("userId")
+	userIDStr, _ := userID.(string)
 	id := c.Param("id")
 
-	if result := h.db.Delete(&models.Role{}, "id = ?", id); result.Error != nil {
+	if result := h.db.Delete(&models.Role{}, "id = ? AND user_id = ?", id, userIDStr); result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 		return
 	}

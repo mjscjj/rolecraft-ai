@@ -7,6 +7,8 @@ import React, { useState, useEffect } from 'react';
 import { ThinkingGraph } from './ThinkingGraph';
 import type {
   ThinkingGraph as ThinkingGraphType,
+  ThinkingGraphLayoutType,
+  ThinkingGraphThemeType,
 } from '../../types/thinking';
 import {
   ThinkingNodeType,
@@ -196,8 +198,8 @@ const simulateThinkingProcess = async (): Promise<ThinkingGraphType> => {
  */
 export const ThinkingGraphDemo: React.FC = () => {
   const [graph, setGraph] = useState<ThinkingGraphType | null>(null);
-  const [layout, setLayout] = useState<typeof ThinkingGraphLayout.TREE>(ThinkingGraphLayout.TREE);
-  const [theme, setTheme] = useState<typeof ThinkingGraphTheme.LIGHT>(ThinkingGraphTheme.LIGHT);
+  const [layout, setLayout] = useState<ThinkingGraphLayoutType>(ThinkingGraphLayout.TREE);
+  const [theme, setTheme] = useState<ThinkingGraphThemeType>(ThinkingGraphTheme.LIGHT);
   const [isSimulating, setIsSimulating] = useState(false);
 
   const handleSimulate = async () => {
@@ -293,7 +295,7 @@ export const ThinkingGraphDemo: React.FC = () => {
             布局：
             <select
               value={layout}
-              onChange={(e) => setLayout(e.target.value as ThinkingGraphLayout)}
+              onChange={(e) => setLayout(e.target.value as ThinkingGraphLayoutType)}
               style={{ marginLeft: '5px', padding: '5px' }}
             >
               <option value={ThinkingGraphLayout.TREE}>树状布局</option>
@@ -306,7 +308,7 @@ export const ThinkingGraphDemo: React.FC = () => {
             主题：
             <select
               value={theme}
-              onChange={(e) => setTheme(e.target.value as ThinkingGraphTheme)}
+              onChange={(e) => setTheme(e.target.value as ThinkingGraphThemeType)}
               style={{ marginLeft: '5px', padding: '5px' }}
             >
               <option value={ThinkingGraphTheme.LIGHT}>浅色</option>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Send, Bot, User, Sparkles, ArrowLeft } from 'lucide-react';
+import { Send, Bot, User, ArrowLeft } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import client from '../api/client';
@@ -19,6 +19,7 @@ export const Chat = () => {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [role, setRole] = useState<any>(null);
+  const [sessionId, setSessionId] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -31,8 +32,10 @@ export const Chat = () => {
 
   const loadRole = async () => {
     try {
+      setSessionId('');
+      setMessages([]);
       const response = await client.get(`/roles/${roleId}`);
-      if (response.data.code === 0) {
+      if (response.data.code === 200 || response.data.code === 0) {
         setRole(response.data.data);
         // 添加欢迎消息
         if (response.data.data.welcomeMessage) {
@@ -53,13 +56,39 @@ export const Chat = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  const ensureSession = async (): Promise<string> => {
+    if (sessionId) return sessionId;
+
+    const modelConfig = {
+      preferredModel: localStorage.getItem('preferredModel') || 'qwen-plus',
+      preferredTemperature: Number(localStorage.getItem('preferredTemperature') || '0.7'),
+      knowledgeScope: 'none',
+      customAPIKey: localStorage.getItem('customAPIKey') || '',
+    };
+
+    const sessionResponse = await client.post('/chat-sessions', {
+      roleId,
+      mode: 'quick',
+      modelConfig,
+    });
+
+    if (sessionResponse.data.code !== 200 && sessionResponse.data.code !== 0) {
+      throw new Error('创建会话失败');
+    }
+
+    const id = sessionResponse.data.data.id;
+    setSessionId(id);
+    return id;
+  };
+
   const handleSend = async () => {
     if (!input.trim() || loading) return;
+    const content = input.trim();
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input,
+      content,
       timestamp: new Date().toLocaleString()
     };
 
@@ -68,29 +97,21 @@ export const Chat = () => {
     setLoading(true);
 
     try {
-      // 创建会话
-      const sessionResponse = await client.post('/chat-sessions', {
-        roleId,
-        mode: 'quick'
+      const currentSessionId = await ensureSession();
+
+      // 发送消息
+      const chatResponse = await client.post(`/chat/${currentSessionId}/complete`, {
+        content
       });
 
-      if (sessionResponse.data.code === 0) {
-        const sessionId = sessionResponse.data.data.id;
-
-        // 发送消息
-        const chatResponse = await client.post(`/chat/${sessionId}/complete`, {
-          content: input
-        });
-
-        if (chatResponse.data.code === 0) {
-          const assistantMessage: Message = {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: chatResponse.data.data.assistantMessage.content,
-            timestamp: new Date().toLocaleString()
-          };
-          setMessages(prev => [...prev, assistantMessage]);
-        }
+      if (chatResponse.data.code === 200 || chatResponse.data.code === 0) {
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: chatResponse.data.data.assistantMessage.content,
+          timestamp: new Date().toLocaleString()
+        };
+        setMessages(prev => [...prev, assistantMessage]);
       }
     } catch (error: any) {
       console.error('发送消息失败:', error);

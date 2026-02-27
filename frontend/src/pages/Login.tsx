@@ -22,14 +22,14 @@ export const Login = () => {
       const endpoint = isLogin ? '/auth/login' : '/auth/register';
       const response = await client.post(endpoint, formData);
 
-      if (response.data.code === 0) {
+      if (response.data.code === 200 || response.data.code === 0) {
         const { token, user } = response.data.data;
         localStorage.setItem('token', token);
         localStorage.setItem('user', JSON.stringify(user));
         navigate('/');
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || '操作失败，请重试');
+      setError(err.response?.data?.error || err.response?.data?.message || '操作失败，请重试');
     } finally {
       setLoading(false);
     }

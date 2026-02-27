@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { api } from '../utils/api';
+import client from '../api/client';
 
 // 类型定义
 export interface PromptVersion {
@@ -69,7 +69,7 @@ export const PromptOptimizer: React.FC<PromptOptimizerProps> = ({
         }));
       }, 300);
 
-      const response = await api.post<OptimizationResult>('/api/prompt/optimize', {
+      const response = await client.post<{ data: OptimizationResult }>('/prompt/optimize', {
         prompt: inputPrompt,
         generateVersions: 3,
         includeSuggestions: true,
@@ -77,10 +77,10 @@ export const PromptOptimizer: React.FC<PromptOptimizerProps> = ({
 
       clearInterval(progressInterval);
       setState({ status: 'completed', progress: 100 });
-      setResult(response.data);
+      setResult(response.data.data);
 
       // 自动选择推荐版本
-      const recommended = response.data.versions.find(v => v.isRecommended);
+      const recommended = response.data.data.versions.find(v => v.isRecommended);
       if (recommended) {
         setSelectedVersion(recommended.id);
       }

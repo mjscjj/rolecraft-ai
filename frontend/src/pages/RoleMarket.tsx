@@ -1,98 +1,69 @@
-import type { FC } from 'react'; import { useState } from 'react';
+import type { FC } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Search, Plus, Filter, Grid3X3, List, Sparkles } from 'lucide-react';
 import { RoleCard } from '../components/RoleCard';
 import type { Role } from '../types';
-
-const categories = ['全部', '通用', '营销', '法律', '财务', '技术', '人事', '行政'];
-
-const mockRoles: Role[] = [
-  {
-    id: '1',
-    name: '智能助理',
-    description: '全能型办公助手，帮助处理日常事务、撰写邮件、安排日程、整理资料等',
-    category: '通用',
-    systemPrompt: 'You are a helpful assistant...',
-    isTemplate: true,
-    skills: [
-      { id: '1', name: '邮件撰写', description: '' },
-      { id: '2', name: '日程管理', description: '' },
-      { id: '3', name: '资料整理', description: '' },
-    ]
-  },
-  {
-    id: '2',
-    name: '营销专家',
-    description: '专业的营销策划助手，帮助制定营销策略、撰写广告文案、分析市场趋势',
-    category: '营销',
-    systemPrompt: 'You are a marketing expert...',
-    isTemplate: true,
-    skills: [
-      { id: '4', name: '文案撰写', description: '' },
-      { id: '5', name: '活动策划', description: '' },
-      { id: '6', name: '市场分析', description: '' },
-    ]
-  },
-  {
-    id: '3',
-    name: '法务顾问',
-    description: '合同审查与法律咨询专家，协助审查合同条款、解答法律问题',
-    category: '法律',
-    systemPrompt: 'You are a legal advisor...',
-    isTemplate: true,
-    skills: [
-      { id: '7', name: '合同审核', description: '' },
-      { id: '8', name: '法规查询', description: '' },
-      { id: '9', name: '风险评估', description: '' },
-    ]
-  },
-  {
-    id: '4',
-    name: '财务助手',
-    description: '财务报表分析与税务咨询专家，帮助分析财务数据、规划税务',
-    category: '财务',
-    systemPrompt: 'You are a financial assistant...',
-    isTemplate: true,
-    skills: [
-      { id: '10', name: '报表分析', description: '' },
-      { id: '11', name: '税务规划', description: '' },
-    ]
-  },
-  {
-    id: '5',
-    name: '技术支持',
-    description: 'IT 问题诊断与解决专家，帮助排查技术故障、审查代码',
-    category: '技术',
-    systemPrompt: 'You are a tech support...',
-    skills: [
-      { id: '12', name: '故障排查', description: '' },
-      { id: '13', name: '代码审查', description: '' },
-    ]
-  },
-  {
-    id: '6',
-    name: 'HR 专员',
-    description: '招聘与员工关系专家，协助简历筛选、面试安排、政策解答',
-    category: '人事',
-    systemPrompt: 'You are an HR specialist...',
-    isTemplate: true,
-    skills: [
-      { id: '14', name: '简历筛选', description: '' },
-      { id: '15', name: '面试安排', description: '' },
-    ]
-  },
-];
+import roleApi from '../api/role';
 
 export const RoleMarket: FC = () => {
+  const navigate = useNavigate();
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [activeCategory, setActiveCategory] = useState('全部');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const filteredRoles = mockRoles.filter(role => {
+  useEffect(() => {
+    const loadTemplates = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const data = await roleApi.getTemplates();
+        const normalized = data.map((role) => ({
+          ...role,
+          category: role.category || '通用',
+          description: role.description || '',
+          isTemplate: true,
+        }));
+        setRoles(normalized);
+      } catch (err: any) {
+        setError(err?.message || '加载角色模板失败');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadTemplates();
+  }, []);
+
+  const categories = useMemo(() => {
+    const fromData = Array.from(new Set(roles.map((r) => r.category).filter(Boolean)));
+    return ['全部', ...fromData];
+  }, [roles]);
+
+  const filteredRoles = roles.filter(role => {
     const matchCategory = activeCategory === '全部' || role.category === activeCategory;
     const matchSearch = role.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                       role.description.toLowerCase().includes(searchQuery.toLowerCase());
+                       (role.description || '').toLowerCase().includes(searchQuery.toLowerCase());
     return matchCategory && matchSearch;
   });
+
+  const handleUseTemplate = async (template: Role) => {
+    try {
+      const created = await roleApi.create({
+        name: template.name,
+        description: template.description || '',
+        category: template.category || '通用',
+        systemPrompt: template.systemPrompt || '你是一个有帮助的 AI 助手。',
+        welcomeMessage: template.welcomeMessage || `你好！我是${template.name}，很高兴为你服务。`,
+      });
+      navigate(`/chat/${created.id}`);
+    } catch (err: any) {
+      alert(err?.message || '使用模板失败，请先登录');
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -170,9 +141,24 @@ export const RoleMarket: FC = () => {
       </div>
 
       {/* Role Grid */}
+      {loading && (
+        <div className="py-20 text-center text-slate-500">加载角色模板中...</div>
+      )}
+
+      {error && !loading && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          {error}
+        </div>
+      )}
+
       <div className={`grid gap-6 ${viewMode === 'grid' ? 'grid-cols-3' : 'grid-cols-1'}`}>
         {filteredRoles.map(role => (
-          <RoleCard key={role.id} role={role} />
+          <RoleCard
+            key={role.id}
+            role={role}
+            onClick={() => handleUseTemplate(role)}
+            onUse={() => handleUseTemplate(role)}
+          />
         ))}
       </div>
 

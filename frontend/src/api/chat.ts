@@ -7,9 +7,32 @@ export interface ChatSession {
   roleId: string;
   title: string;
   mode: 'quick' | 'task';
+  modelConfig?: Record<string, any>;
   createdAt: string;
   updatedAt: string;
 }
+
+const parseModelConfig = (value: unknown): Record<string, any> | undefined => {
+  if (!value) return undefined;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === 'object') return parsed as Record<string, any>;
+    } catch {
+      return undefined;
+    }
+    return undefined;
+  }
+  if (typeof value === 'object') {
+    return value as Record<string, any>;
+  }
+  return undefined;
+};
+
+const normalizeSession = (session: any): ChatSession => ({
+  ...session,
+  modelConfig: parseModelConfig(session?.modelConfig),
+});
 
 // 消息类型
 export interface Message {
@@ -20,13 +43,19 @@ export interface Message {
   createdAt: string;
 }
 
+interface StreamWithThinkingHandlers {
+  onThinking?: (content: string) => void;
+  onChunk: (chunk: string) => void;
+  onDone: () => void;
+}
+
 // 对话 API
 export const chatApi = {
   // 获取会话列表
   listSessions: async (): Promise<ChatSession[]> => {
     try {
       const response = await client.get<ApiResponse<ChatSession[]>>('/chat-sessions');
-      return response.data.data;
+      return (response.data.data || []).map(normalizeSession);
     } catch (error) {
       throw handleApiError(error);
     }
@@ -37,10 +66,11 @@ export const chatApi = {
     roleId: string;
     title?: string;
     mode?: 'quick' | 'task';
+    modelConfig?: Record<string, any>;
   }): Promise<ChatSession> => {
     try {
       const response = await client.post<ApiResponse<ChatSession>>('/chat-sessions', data);
-      return response.data.data;
+      return normalizeSession(response.data.data);
     } catch (error) {
       throw handleApiError(error);
     }
@@ -56,7 +86,10 @@ export const chatApi = {
         session: ChatSession;
         messages: Message[];
       }>>(`/chat-sessions/${id}`);
-      return response.data.data;
+      return {
+        ...response.data.data,
+        session: normalizeSession(response.data.data.session),
+      };
     } catch (error) {
       throw handleApiError(error);
     }
@@ -83,7 +116,8 @@ export const chatApi = {
     sessionId: string,
     content: string,
     onChunk: (chunk: string) => void,
-    onDone: () => void
+    onDone: () => void,
+    signal?: AbortSignal
   ): Promise<void> => {
     const token = localStorage.getItem('token');
     const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
@@ -95,6 +129,7 @@ export const chatApi = {
         'Authorization': `Bearer ${token}`,
       },
       body: JSON.stringify({ content }),
+      signal,
     });
 
     if (!response.ok) {
@@ -128,6 +163,83 @@ export const chatApi = {
         }
       }
     }
+
+    onDone();
+  },
+
+  // 发送消息（流式 + 深度思考过程）
+  streamMessageWithThinking: async (
+    sessionId: string,
+    content: string,
+    handlers: StreamWithThinkingHandlers,
+    signal?: AbortSignal
+  ): Promise<void> => {
+    const token = localStorage.getItem('token');
+    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+
+    const response = await fetch(`${API_BASE_URL}/api/v1/chat/${sessionId}/stream-with-thinking`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ content }),
+      signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) return;
+
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value);
+      const lines = chunk.split('\n').filter((line) => line.startsWith('data: '));
+
+      for (const line of lines) {
+        const data = line.slice(6);
+        try {
+          const parsed = JSON.parse(data);
+
+          if (parsed.type === 'error') {
+            const message = parsed?.data?.message || '深度思考请求失败';
+            throw new Error(message);
+          }
+
+          if (parsed.type === 'thinking' && parsed.step?.content) {
+            handlers.onThinking?.(parsed.step.content);
+            continue;
+          }
+
+          if (parsed.type === 'answer' && parsed.content) {
+            handlers.onChunk(parsed.content);
+            continue;
+          }
+
+          if (parsed.content) {
+            handlers.onChunk(parsed.content);
+          }
+
+          if (parsed.done || parsed.type === 'done') {
+            handlers.onDone();
+          }
+        } catch (err: any) {
+          if (err instanceof Error) {
+            throw err;
+          }
+          // 忽略单条解析错误，继续处理后续流
+        }
+      }
+    }
+
+    handlers.onDone();
   },
 
   // 切换角色
@@ -160,6 +272,22 @@ export const chatApi = {
         sessionId: string;
         title: string;
       }>>(`/chat-sessions/${sessionId}/title`, { title });
+      return response.data.data;
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
+
+  // 更新会话配置
+  updateSessionConfig: async (sessionId: string, modelConfig: Record<string, any>): Promise<{
+    sessionId: string;
+    modelConfig: Record<string, any>;
+  }> => {
+    try {
+      const response = await client.put<ApiResponse<{
+        sessionId: string;
+        modelConfig: Record<string, any>;
+      }>>(`/chat-sessions/${sessionId}/config`, { modelConfig });
       return response.data.data;
     } catch (error) {
       throw handleApiError(error);
@@ -207,7 +335,7 @@ export const chatApi = {
   search: async (query: string): Promise<ChatSession[]> => {
     try {
       const response = await client.post<ApiResponse<ChatSession[]>>('/chat-sessions/search', { query });
-      return response.data.data;
+      return (response.data.data || []).map(normalizeSession);
     } catch (error) {
       throw handleApiError(error);
     }

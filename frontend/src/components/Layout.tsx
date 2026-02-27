@@ -1,11 +1,11 @@
 import type { FC, ReactNode } from 'react';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   BookOpen, 
   MessageSquare, 
   Settings,
   Plus,
-  Search,
   Bot,
   BarChart3
 } from 'lucide-react';
@@ -24,6 +24,16 @@ const navItems = [
 ];
 
 export const Layout: FC<LayoutProps> = ({ children }) => {
+  const navigate = useNavigate();
+  const userRaw = typeof window !== 'undefined' ? localStorage.getItem('user') : null;
+  const user = userRaw ? JSON.parse(userRaw) : null;
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    navigate('/login');
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Sidebar */}
@@ -38,37 +48,44 @@ export const Layout: FC<LayoutProps> = ({ children }) => {
             </span>
           </div>
           
-          {/* Search */}
-          <div className="relative mb-6">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="搜索..."
-              className="w-full pl-10 pr-4 py-2 bg-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-          
           {/* Navigation */}
           <nav className="space-y-1">
             {navItems.map((item) => (
-              <a
+              <NavLink
                 key={item.path}
-                href={item.path}
-                className="flex items-center gap-3 px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                to={item.path}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+                    isActive ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-100'
+                  }`
+                }
               >
                 <item.icon className="w-5 h-5" />
                 <span>{item.label}</span>
-              </a>
+              </NavLink>
             ))}
           </nav>
         </div>
         
         {/* Create Button */}
         <div className="absolute bottom-0 left-0 right-0 p-4">
-          <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+          <button
+            onClick={() => navigate('/roles/create')}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+          >
             <Plus className="w-5 h-5" />
             创建角色
           </button>
+          <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+            <p className="truncate text-sm font-medium text-slate-700">{user?.name || '用户'}</p>
+            <p className="truncate text-xs text-slate-400">{user?.email || ''}</p>
+            <button
+              onClick={handleLogout}
+              className="mt-2 w-full rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600 hover:bg-slate-200"
+            >
+              退出登录
+            </button>
+          </div>
         </div>
       </aside>
       

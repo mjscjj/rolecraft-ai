@@ -5,8 +5,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 	_ "rolecraft-ai/docs"
@@ -66,19 +66,19 @@ func main() {
 	}))
 
 	// ===== 健康检查和监控路由 =====
-	
+
 	healthHandler := handler.NewHealthHandler(db, cfg)
-	
+
 	// 简单健康检查（向后兼容）
 	r.GET("/health", handler.SimpleHealthCheck)
-	
+
 	// 综合健康检查
 	r.GET("/api/v1/health", healthHandler.Health)
-	
+
 	// Kubernetes 探针
 	r.GET("/api/v1/ready", healthHandler.Ready)
 	r.GET("/api/v1/live", healthHandler.Live)
-	
+
 	// 性能指标
 	r.GET("/api/v1/metrics", healthHandler.Metrics)
 	r.GET("/api/v1/db/stats", healthHandler.DBStats)
@@ -130,12 +130,12 @@ func main() {
 			authorized.GET("/documents/:id/download", docHandler.Download)
 			authorized.PUT("/documents/:id", docHandler.Update)
 			authorized.DELETE("/documents/:id", docHandler.Delete)
-			
+
 			// 批量操作
 			authorized.DELETE("/documents/batch", docHandler.BatchDelete)
 			authorized.PUT("/documents/batch/move", docHandler.BatchMove)
 			authorized.PUT("/documents/batch/tags", docHandler.BatchUpdateTags)
-			
+
 			// 文件夹
 			authorized.GET("/folders", docHandler.ListFolders)
 			authorized.POST("/folders", docHandler.CreateFolder)
@@ -146,10 +146,12 @@ func main() {
 			authorized.GET("/chat-sessions", chatHandler.ListSessions)
 			authorized.POST("/chat-sessions", chatHandler.CreateSession)
 			authorized.GET("/chat-sessions/:id", chatHandler.GetSession)
+			authorized.DELETE("/chat-sessions/:id", chatHandler.WorkspaceAuth(), chatHandler.DeleteSession)
 			authorized.POST("/chat-sessions/:id/switch-role", chatHandler.WorkspaceAuth(), chatHandler.SwitchRole)
 			authorized.GET("/chat-sessions/:id/sync", chatHandler.WorkspaceAuth(), chatHandler.SyncSession)
 			authorized.DELETE("/chat-sessions/:id/messages/:msgId", chatHandler.WorkspaceAuth(), chatHandler.DeleteMessage)
 			authorized.PUT("/chat-sessions/:id/title", chatHandler.WorkspaceAuth(), chatHandler.UpdateSessionTitle)
+			authorized.PUT("/chat-sessions/:id/config", chatHandler.WorkspaceAuth(), chatHandler.UpdateSessionConfig)
 			authorized.POST("/chat-sessions/:id/archive", chatHandler.WorkspaceAuth(), chatHandler.ArchiveSession)
 			authorized.POST("/chat-sessions/:id/export", chatHandler.WorkspaceAuth(), chatHandler.ExportSession)
 			authorized.POST("/chat-sessions/search", chatHandler.WorkspaceAuth(), chatHandler.SearchSessions)
@@ -158,6 +160,7 @@ func main() {
 			authorized.POST("/chat/messages/:msgId/rate", chatHandler.WorkspaceAuth(), chatHandler.RateMessage)
 			authorized.POST("/chat/:id/complete", chatHandler.WorkspaceAuth(), chatHandler.Chat)
 			authorized.POST("/chat/:id/stream", chatHandler.WorkspaceAuth(), chatHandler.ChatStream)
+			authorized.POST("/chat/:id/stream-with-thinking", chatHandler.WorkspaceAuth(), chatHandler.ChatStreamWithThinking)
 
 			// 测试
 			testHandler := handler.NewTestHandler(db)

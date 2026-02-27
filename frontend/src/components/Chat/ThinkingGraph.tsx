@@ -8,6 +8,7 @@ import React, { useCallback, useMemo, useState, useEffect } from 'react';
 import {
   ReactFlow,
   Background,
+  BackgroundVariant,
   Controls,
   MiniMap,
   useNodesState,
@@ -506,8 +507,8 @@ const ThinkingGraphInner: React.FC<ThinkingGraphProps> = ({
   className = '',
   style,
 }) => {
-  const [nodes, setNodes, onNodesChange] = useNodesState<any[]>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<any[]>([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<any>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<any>([]);
   const [currentLayout, setCurrentLayout] = useState<ThinkingGraphLayoutType>(layout);
 
   // 节点类型映射
@@ -609,15 +610,14 @@ const ThinkingGraphInner: React.FC<ThinkingGraphProps> = ({
         snapGrid={[15, 15]}
         minZoom={graph.config?.minZoom || 0.1}
         maxZoom={graph.config?.maxZoom || 2}
-        defaultZoom={graph.config?.defaultZoom || 1}
         className={`thinking-flow ${themeClass}`}
       >
-        {showBackground && <Background variant="dots" gap={20} size={1} />}
+        {showBackground && <Background variant={BackgroundVariant.Dots} gap={20} size={1} />}
         {showControls && <Controls />}
         {showMinimap && (
           <MiniMap
             nodeColor={(node) => {
-              const type = (node.data as ThinkingFlowNodeData)?.type;
+              const type = (node.data as unknown as ThinkingFlowNodeData)?.type;
               switch (type) {
                 case ThinkingNodeType.ROOT: return '#3b82f6';
                 case ThinkingNodeType.ANALYSIS: return '#8b5cf6';

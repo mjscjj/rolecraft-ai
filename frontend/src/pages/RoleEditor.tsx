@@ -1,4 +1,5 @@
 import type { FC } from 'react'; import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   ChevronRight, 
   ChevronLeft, 
@@ -10,6 +11,7 @@ import {
   Save,
   Upload
 } from 'lucide-react';
+import client from '../api/client';
 
 const steps = [
   { id: 1, label: '基础信息', icon: User },
@@ -35,7 +37,11 @@ const documentsList = [
 ];
 
 export const RoleEditor: FC = () => {
+  const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(1);
+  const [publishing, setPublishing] = useState(false);
+  const [error, setError] = useState('');
+  const [isPublic, setIsPublic] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -69,6 +75,46 @@ export const RoleEditor: FC = () => {
         ? prev.filter(id => id !== docId)
         : [...prev, docId]
     );
+  };
+
+  const handleSaveDraft = () => {
+    localStorage.setItem('roleEditorDraft', JSON.stringify({ formData, selectedSkills, selectedDocs, isPublic }));
+  };
+
+  const handlePublish = async () => {
+    if (!formData.name.trim() || !formData.systemPrompt.trim()) {
+      setError('请至少填写角色名称和系统提示词');
+      return;
+    }
+
+    setPublishing(true);
+    setError('');
+
+    try {
+      const response = await client.post('/roles', {
+        name: formData.name.trim(),
+        description: formData.description.trim(),
+        category: formData.category,
+        systemPrompt: formData.systemPrompt.trim(),
+        welcomeMessage: formData.welcomeMessage.trim(),
+        isPublic,
+        modelConfig: {
+          temperature: formData.temperature,
+          skills: selectedSkills,
+          documents: selectedDocs,
+        },
+      });
+
+      if (response.data.code === 200 || response.data.code === 0) {
+        navigate(`/chat/${response.data.data.id}`);
+      } else {
+        setError('发布失败，请重试');
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.error || '发布失败，请重试');
+    } finally {
+      setPublishing(false);
+    }
   };
 
   return (
@@ -340,10 +386,21 @@ export const RoleEditor: FC = () => {
 
             <div className="flex items-center gap-4 pt-4 border-t border-slate-100">
               <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary" />
+                <input
+                  type="checkbox"
+                  checked={isPublic}
+                  onChange={(e) => setIsPublic(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary"
+                />
                 <span className="text-sm text-slate-700">发布到角色市场（公开）</span>
               </label>
             </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="mt-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">
+            {error}
           </div>
         )}
 
@@ -359,7 +416,10 @@ export const RoleEditor: FC = () => {
           </button>
 
           <div className="flex items-center gap-3">
-            <button className="flex items-center gap-2 px-6 py-2.5 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+            <button
+              onClick={handleSaveDraft}
+              className="flex items-center gap-2 px-6 py-2.5 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+            >
               <Save className="w-5 h-5" />
               保存草稿
             </button>
@@ -373,9 +433,13 @@ export const RoleEditor: FC = () => {
                 <ChevronRight className="w-5 h-5" />
               </button>
             ) : (
-              <button className="flex items-center gap-2 px-6 py-2.5 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors">
+              <button
+                onClick={handlePublish}
+                disabled={publishing}
+                className="flex items-center gap-2 px-6 py-2.5 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 <Play className="w-5 h-5" />
-                发布角色
+                {publishing ? '发布中...' : '发布角色'}
               </button>
             )}
           </div>

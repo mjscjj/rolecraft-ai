@@ -8,14 +8,27 @@ interface ChatState {
   messages: Message[];
   isLoading: boolean;
   isStreaming: boolean;
+  thinkingSteps: string[];
+  lastStreamContent: string | null;
+  lastStreamMode: 'normal' | 'deep';
+  streamController: AbortController | null;
   error: string | null;
 
   // Actions
   fetchSessions: () => Promise<void>;
-  createSession: (roleId: string, title?: string, mode?: 'quick' | 'task') => Promise<ChatSession>;
+  createSession: (
+    roleId: string,
+    title?: string,
+    mode?: 'quick' | 'task',
+    modelConfig?: Record<string, any>
+  ) => Promise<ChatSession>;
   fetchSession: (id: string) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
   sendStreamMessage: (content: string) => Promise<void>;
+  sendStreamMessageWithThinking: (content: string) => Promise<void>;
+  updateSessionConfig: (modelConfig: Record<string, any>) => Promise<void>;
+  cancelStream: () => void;
+  retryLastStream: () => Promise<void>;
   appendMessage: (message: Message) => void;
   updateLastMessage: (content: string) => void;
   clearMessages: () => void;
@@ -28,7 +41,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   isLoading: false,
   isStreaming: false,
+  thinkingSteps: [],
+  lastStreamContent: null,
+  lastStreamMode: 'normal',
   error: null,
+  streamController: null as AbortController | null,
 
   fetchSessions: async () => {
     set({ isLoading: true, error: null });
@@ -43,10 +60,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  createSession: async (roleId, title, mode = 'quick') => {
+  createSession: async (roleId, title, mode = 'quick', modelConfig) => {
     set({ isLoading: true, error: null });
     try {
-      const session = await chatApi.createSession({ roleId, title, mode });
+      const session = await chatApi.createSession({ roleId, title, mode, modelConfig });
       set((state) => ({
         sessions: [session, ...state.sessions],
         currentSession: session,
@@ -67,11 +84,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const { session, messages } = await chatApi.getSession(id);
-      set({
+      set((state) => ({
         currentSession: session,
         messages,
+        sessions: state.sessions.some((item) => item.id === session.id)
+          ? state.sessions.map((item) => (item.id === session.id ? session : item))
+          : [session, ...state.sessions],
         isLoading: false,
-      });
+      }));
     } catch (error: any) {
       set({
         error: error.message || 'Failed to fetch session',
@@ -114,7 +134,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { currentSession, messages } = get();
     if (!currentSession) return;
 
-    set({ isStreaming: true, error: null });
+    const controller = new AbortController();
+    set({
+      isStreaming: true,
+      error: null,
+      lastStreamContent: content,
+      lastStreamMode: 'normal',
+      thinkingSteps: [],
+      streamController: controller,
+    });
 
     // 添加用户消息
     const userMsg: Message = {
@@ -152,15 +180,161 @@ export const useChatStore = create<ChatState>((set, get) => ({
           });
         },
         () => {
-          set({ isStreaming: false });
-        }
+          set({ isStreaming: false, streamController: null });
+        },
+        controller.signal
       );
     } catch (error: any) {
-      set({
-        error: error.message || 'Failed to send stream message',
-        isStreaming: false,
+      if (error?.name === 'AbortError') {
+        set((state) => {
+          const next = [...state.messages];
+          const last = next[next.length - 1];
+          if (last && last.role === 'assistant' && !last.content.trim()) {
+            last.content = '已停止生成。';
+          }
+          return { messages: next, isStreaming: false, streamController: null, thinkingSteps: [] };
+        });
+        return;
+      }
+      set((state) => {
+        const next = [...state.messages];
+        const last = next[next.length - 1];
+        if (last && last.role === 'assistant' && !last.content.trim()) {
+          last.content = '生成失败，请重试。';
+        }
+        return {
+          messages: next,
+          error: error.message || 'Failed to send stream message',
+          isStreaming: false,
+          streamController: null,
+          thinkingSteps: [],
+        };
       });
     }
+  },
+
+  sendStreamMessageWithThinking: async (content) => {
+    const { currentSession, messages } = get();
+    if (!currentSession) return;
+
+    const controller = new AbortController();
+    set({
+      isStreaming: true,
+      error: null,
+      lastStreamContent: content,
+      lastStreamMode: 'deep',
+      thinkingSteps: [],
+      streamController: controller,
+    });
+
+    const userMsg: Message = {
+      id: `user-${Date.now()}`,
+      sessionId: currentSession.id,
+      role: 'user',
+      content,
+      createdAt: new Date().toISOString(),
+    };
+
+    const aiMsg: Message = {
+      id: `ai-${Date.now()}`,
+      sessionId: currentSession.id,
+      role: 'assistant',
+      content: '',
+      createdAt: new Date().toISOString(),
+    };
+
+    set({ messages: [...messages, userMsg, aiMsg] });
+
+    try {
+      await chatApi.streamMessageWithThinking(
+        currentSession.id,
+        content,
+        {
+          onThinking: (stepContent) => {
+            set((state) => ({ thinkingSteps: [...state.thinkingSteps, stepContent] }));
+          },
+          onChunk: (chunk) => {
+            set((state) => {
+              const newMessages = [...state.messages];
+              const lastMsg = newMessages[newMessages.length - 1];
+              if (lastMsg.role === 'assistant') {
+                lastMsg.content += chunk;
+              }
+              return { messages: newMessages };
+            });
+          },
+          onDone: () => {
+            set({ isStreaming: false, streamController: null });
+          },
+        },
+        controller.signal
+      );
+    } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        set((state) => {
+          const next = [...state.messages];
+          const last = next[next.length - 1];
+          if (last && last.role === 'assistant' && !last.content.trim()) {
+            last.content = '已停止生成。';
+          }
+          return { messages: next, isStreaming: false, streamController: null };
+        });
+        return;
+      }
+      set((state) => {
+        const next = [...state.messages];
+        const last = next[next.length - 1];
+        if (last && last.role === 'assistant' && !last.content.trim()) {
+          last.content = '生成失败，请重试。';
+        }
+        return {
+          messages: next,
+          error: error.message || 'Failed to send deep thinking stream message',
+          isStreaming: false,
+          streamController: null,
+        };
+      });
+    }
+  },
+
+  updateSessionConfig: async (modelConfig) => {
+    const { currentSession } = get();
+    if (!currentSession) return;
+
+    try {
+      await chatApi.updateSessionConfig(currentSession.id, modelConfig);
+      set((state) => ({
+        currentSession: state.currentSession
+          ? { ...state.currentSession, modelConfig }
+          : state.currentSession,
+        sessions: state.sessions.map((session) =>
+          session.id === currentSession.id ? { ...session, modelConfig } : session
+        ),
+      }));
+    } catch (error: any) {
+      set({
+        error: error.message || 'Failed to update session config',
+      });
+      throw error;
+    }
+  },
+
+  cancelStream: () => {
+    const { streamController } = get();
+    if (streamController) {
+      streamController.abort();
+    }
+    set({ isStreaming: false, streamController: null });
+  },
+
+  retryLastStream: async () => {
+    const { lastStreamContent, lastStreamMode } = get();
+    if (!lastStreamContent) return;
+    if (lastStreamMode === 'deep') {
+      await get().sendStreamMessageWithThinking(lastStreamContent);
+      return;
+    }
+    await get().sendStreamMessage(lastStreamContent);
   },
 
   appendMessage: (message) => {

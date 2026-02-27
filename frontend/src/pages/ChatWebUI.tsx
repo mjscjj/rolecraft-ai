@@ -1,8 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import Sidebar from '../components/WebUI/Sidebar';
 import Message from '../components/WebUI/Message';
 import ChatInput from '../components/WebUI/ChatInput';
-import { chatApi, type ChatSession, type Message as MessageType } from '../api/chat';
+import { chatApi } from '../api/chat';
+import { documentApi } from '../api/document';
+import type { Document } from '../api/document';
+import roleApi from '../api/role';
 import { useChatStore } from '../stores/chatStore';
 import '../styles/webui.css';
 
@@ -11,6 +15,10 @@ interface ChatWebUIProps {
 }
 
 const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
+  const { roleId: routeRoleId } = useParams<{ roleId: string }>();
+  const [selectedRoleId, setSelectedRoleId] = useState('');
+  const effectiveRoleId = initialRoleId || routeRoleId || selectedRoleId;
+
   // State from store
   const {
     sessions,
@@ -18,11 +26,16 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
     messages,
     isLoading,
     isStreaming,
+    thinkingSteps,
     error,
     fetchSessions,
     createSession,
     fetchSession,
     sendStreamMessage,
+    sendStreamMessageWithThinking,
+    updateSessionConfig,
+    cancelStream,
+    retryLastStream,
     clearError,
   } = useChatStore();
 
@@ -31,18 +44,34 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
   const [isDarkTheme, setIsDarkTheme] = useState(false);
   const [selectedModel, setSelectedModel] = useState('qwen-plus');
   const [selectedKnowledge, setSelectedKnowledge] = useState('none');
+  const [temperature, setTemperature] = useState(0.7);
+  const [chatMode, setChatMode] = useState<'normal' | 'deep'>('normal');
+  const [knowledgeFolders, setKnowledgeFolders] = useState<Array<{ id: string; name: string }>>([]);
+  const [availableRoles, setAvailableRoles] = useState<Array<{ id: string; name: string }>>([]);
+  const [isUploadingFiles, setIsUploadingFiles] = useState(false);
+  const [pendingAttachmentNames, setPendingAttachmentNames] = useState<string[]>([]);
   const [showWelcome, setShowWelcome] = useState(true);
   const [userInitials, setUserInitials] = useState('U');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastSavedConfigRef = useRef('');
 
   // Initialize
   useEffect(() => {
     fetchSessions();
     
     // Get user info for avatar
-    const userName = localStorage.getItem('user_name') || 'User';
-    setUserInitials(userName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2));
+    let userName = 'User';
+    const userRaw = localStorage.getItem('user');
+    if (userRaw) {
+      try {
+        const parsedUser = JSON.parse(userRaw);
+        userName = parsedUser?.name || 'User';
+      } catch {
+        userName = 'User';
+      }
+    }
+    setUserInitials(userName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2));
 
     // Check theme preference
     const savedTheme = localStorage.getItem('theme');
@@ -50,7 +79,45 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
       setIsDarkTheme(true);
       document.documentElement.setAttribute('data-theme', 'dark');
     }
+
+    const preferredModel = localStorage.getItem('preferredModel');
+    const preferredTemperature = localStorage.getItem('preferredTemperature');
+    const preferredKnowledge = localStorage.getItem('preferredKnowledgeScope');
+    const preferredChatMode = localStorage.getItem('preferredChatMode');
+    if (preferredModel) setSelectedModel(preferredModel);
+    if (preferredTemperature) setTemperature(Number(preferredTemperature));
+    if (preferredKnowledge) setSelectedKnowledge(preferredKnowledge);
+    if (preferredChatMode === 'deep' || preferredChatMode === 'normal') {
+      setChatMode(preferredChatMode);
+    }
+
+    documentApi.listFolders()
+      .then((folders) => {
+        setKnowledgeFolders(folders.map((folder) => ({ id: folder.id, name: folder.name })));
+      })
+      .catch((err) => {
+        console.warn('Failed to load knowledge folders:', err);
+      });
+
+    roleApi.list()
+      .then((roles) => {
+        const normalizedRoles = roles.map((role) => ({ id: role.id, name: role.name }));
+        setAvailableRoles(normalizedRoles);
+        if (!initialRoleId && !routeRoleId && normalizedRoles.length > 0) {
+          setSelectedRoleId(normalizedRoles[0].id);
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to load roles:', err);
+      });
   }, []);
+
+  const buildSessionConfig = () => ({
+    preferredModel: selectedModel,
+    preferredTemperature: temperature,
+    knowledgeScope: selectedKnowledge,
+    customAPIKey: localStorage.getItem('customAPIKey') || '',
+  });
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -61,16 +128,66 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
   useEffect(() => {
     if (currentSession) {
       setShowWelcome(false);
+      const sessionConfig = currentSession.modelConfig || {};
+      const preferredModel = typeof sessionConfig.preferredModel === 'string' ? sessionConfig.preferredModel : '';
+      const preferredTemperature = Number(sessionConfig.preferredTemperature);
+      const knowledgeScope = typeof sessionConfig.knowledgeScope === 'string' ? sessionConfig.knowledgeScope : '';
+
+      if (preferredModel) {
+        setSelectedModel(preferredModel);
+      }
+      if (!Number.isNaN(preferredTemperature) && preferredTemperature >= 0 && preferredTemperature <= 2) {
+        setTemperature(preferredTemperature);
+      }
+      if (knowledgeScope) {
+        setSelectedKnowledge(knowledgeScope);
+      }
+
+      const initialConfig = JSON.stringify({
+        preferredModel: preferredModel || selectedModel,
+        preferredTemperature: !Number.isNaN(preferredTemperature) && preferredTemperature >= 0 && preferredTemperature <= 2
+          ? preferredTemperature
+          : temperature,
+        knowledgeScope: knowledgeScope || selectedKnowledge,
+        customAPIKey: localStorage.getItem('customAPIKey') || '',
+      });
+      lastSavedConfigRef.current = initialConfig;
     } else {
       setShowWelcome(true);
     }
   }, [currentSession]);
 
+  useEffect(() => {
+    localStorage.setItem('preferredModel', selectedModel);
+    localStorage.setItem('preferredTemperature', String(temperature));
+    localStorage.setItem('preferredKnowledgeScope', selectedKnowledge);
+    localStorage.setItem('preferredChatMode', chatMode);
+
+    if (!currentSession) return;
+
+    const nextConfig = buildSessionConfig();
+    const nextConfigText = JSON.stringify(nextConfig);
+    if (nextConfigText === lastSavedConfigRef.current) {
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        await updateSessionConfig(nextConfig);
+        lastSavedConfigRef.current = nextConfigText;
+      } catch (error) {
+        console.error('Failed to update session config:', error);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [selectedModel, selectedKnowledge, temperature, chatMode, currentSession?.id]);
+
   // Handle new chat
   const handleNewChat = async () => {
-    if (initialRoleId) {
+    if (effectiveRoleId) {
       try {
-        await createSession(initialRoleId, '新对话', 'quick');
+        await createSession(effectiveRoleId, '新对话', 'quick', buildSessionConfig());
         setShowWelcome(false);
       } catch (error) {
         console.error('Failed to create session:', error);
@@ -93,13 +210,29 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
 
   // Handle send message
   const handleSendMessage = async (content: string) => {
+    const attachmentPrefix = pendingAttachmentNames.length
+      ? `本轮新增知识文档：${pendingAttachmentNames.join('、')}\n请结合这些文档回答。\n\n`
+      : '';
+    const composedContent = `${attachmentPrefix}${content}`;
+
+    const sendByMode = async (text: string) => {
+      if (chatMode === 'deep') {
+        await sendStreamMessageWithThinking(text);
+      } else {
+        await sendStreamMessage(text);
+      }
+    };
+
     if (!currentSession) {
       // Create new session if none exists
-      if (initialRoleId) {
+      if (effectiveRoleId) {
         try {
-          await createSession(initialRoleId, content.slice(0, 30) + '...', 'quick');
+          await createSession(effectiveRoleId, content.slice(0, 30) + '...', 'quick', buildSessionConfig());
           // Message will be sent after session is created
-          setTimeout(() => sendStreamMessage(content), 100);
+          setTimeout(() => {
+            sendByMode(composedContent);
+          }, 100);
+          setPendingAttachmentNames([]);
         } catch (error) {
           console.error('Failed to create session:', error);
         }
@@ -107,7 +240,8 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
         alert('请先选择一个 AI 角色');
       }
     } else {
-      await sendStreamMessage(content);
+      await sendByMode(composedContent);
+      setPendingAttachmentNames([]);
     }
   };
 
@@ -189,10 +323,47 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
   };
 
   // Handle attach files
-  const handleAttachFiles = (files: FileList) => {
-    console.log('Files to attach:', files);
-    // Implement file upload logic
-    alert(`已选择 ${files.length} 个文件 (功能开发中)`);
+  const handleAttachFiles = async (files: FileList) => {
+    const fileArray = Array.from(files);
+    if (fileArray.length === 0) return;
+
+    setIsUploadingFiles(true);
+    try {
+      const results = await Promise.allSettled(fileArray.map((file) => documentApi.uploadWithFolder(file)));
+      const successCount = results.filter((result) => result.status === 'fulfilled').length;
+      const failCount = results.length - successCount;
+      const uploadedNames: string[] = [];
+
+      results.forEach((result) => {
+        if (result.status !== 'fulfilled') return;
+        const payload = result.value;
+        const docs = Array.isArray(payload) ? payload : [payload];
+        docs.forEach((doc) => {
+          const typedDoc = doc as Document;
+          if (typedDoc?.name) {
+            uploadedNames.push(typedDoc.name);
+          }
+        });
+      });
+
+      if (successCount > 0) {
+        setSelectedKnowledge('all');
+        if (uploadedNames.length > 0) {
+          setPendingAttachmentNames(uploadedNames);
+        }
+      }
+
+      if (failCount > 0) {
+        alert(`上传完成：成功 ${successCount} 个，失败 ${failCount} 个`);
+      } else {
+        alert(`上传成功，共 ${successCount} 个文件`);
+      }
+    } catch (error) {
+      console.error('Failed to upload files:', error);
+      alert('文件上传失败');
+    } finally {
+      setIsUploadingFiles(false);
+    }
   };
 
   // Handle voice input
@@ -254,6 +425,35 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
         </div>
 
         <div className="header-center">
+          {!initialRoleId && !routeRoleId && (
+            <select
+              className="model-selector"
+              value={selectedRoleId}
+              onChange={(e) => setSelectedRoleId(e.target.value)}
+              title="选择角色"
+            >
+              {availableRoles.length === 0 && (
+                <option value="">暂无可用角色</option>
+              )}
+              {availableRoles.map((role) => (
+                <option key={role.id} value={role.id}>
+                  {role.name}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {/* Model Selector */}
+          <select
+            className="model-selector"
+            value={chatMode}
+            onChange={(e) => setChatMode(e.target.value as 'normal' | 'deep')}
+            title="对话模式"
+          >
+            <option value="normal">标准模式</option>
+            <option value="deep">深度思考(搜索)</option>
+          </select>
+
           {/* Model Selector */}
           <select
             className="model-selector"
@@ -276,10 +476,24 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
             title="选择知识库"
           >
             <option value="none">无知识库</option>
-            <option value="kb1">产品知识库</option>
-            <option value="kb2">技术文档</option>
-            <option value="kb3">客服手册</option>
+            <option value="all">全部文档</option>
+            {knowledgeFolders.map((folder) => (
+              <option key={folder.id} value={`folder:${folder.id}`}>
+                文件夹: {folder.name}
+              </option>
+            ))}
           </select>
+          <input
+            type="number"
+            min="0"
+            max="2"
+            step="0.1"
+            value={temperature}
+            onChange={(e) => setTemperature(Number(e.target.value))}
+            title="温度参数"
+            style={{ width: 72 }}
+            className="model-selector"
+          />
         </div>
 
         <div className="header-right">
@@ -292,6 +506,16 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
           >
             📥
           </button>
+          {isStreaming && (
+            <button className="icon-button" onClick={cancelStream} title="停止生成">
+              ⏹️
+            </button>
+          )}
+          {!isStreaming && error && (
+            <button className="icon-button" onClick={retryLastStream} title="重试上一次发送">
+              🔁
+            </button>
+          )}
 
           {/* Theme Toggle */}
           <button
@@ -363,6 +587,28 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
             <>
               <div className="messages-container">
                 <div className="messages-wrapper">
+                  {thinkingSteps.length > 0 && (
+                    <div
+                      style={{
+                        margin: '8px 0 16px',
+                        padding: '12px 14px',
+                        borderRadius: '10px',
+                        border: '1px solid var(--border-color)',
+                        background: 'var(--bg-secondary)',
+                      }}
+                    >
+                      <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                        深度思考过程
+                      </div>
+                      <ol style={{ margin: 0, paddingLeft: 18, color: 'var(--text-primary)', fontSize: 13 }}>
+                        {thinkingSteps.map((step, index) => (
+                          <li key={`${step}-${index}`} style={{ marginBottom: 6 }}>
+                            {step}
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
                   {messages.map((message) => (
                     <Message
                       key={message.id}
@@ -399,13 +645,30 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
               </div>
 
               {/* Input Area */}
+              {pendingAttachmentNames.length > 0 && (
+                <div
+                  style={{
+                    padding: '8px 20px 0',
+                    color: 'var(--text-secondary)',
+                    fontSize: 13,
+                  }}
+                >
+                  本轮将携带文档上下文: {pendingAttachmentNames.join('、')}
+                </div>
+              )}
               <ChatInput
                 onSend={handleSendMessage}
                 onAttach={handleAttachFiles}
                 onVoiceInput={handleVoiceInput}
-                disabled={isLoading}
+                disabled={isLoading || isUploadingFiles}
                 isStreaming={isStreaming}
-                placeholder={isStreaming ? 'AI 正在思考...' : '输入消息... (Shift+Enter 换行)'}
+                placeholder={
+                  isUploadingFiles
+                    ? '文件上传中...'
+                    : isStreaming
+                      ? 'AI 正在思考...'
+                      : '输入消息... (Shift+Enter 换行)'
+                }
               />
             </>
           )}

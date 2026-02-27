@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import ThinkingDisplay, { ThinkingProcess, ThinkingStep } from './Thinking/ThinkingDisplay';
+import React, { useState, useEffect } from 'react';
+import ThinkingDisplay, { ThinkingProcess, ThinkingStep } from './ThinkingDisplay';
 
 // 示例：如何在 Chat 页面中集成 ThinkingDisplay
 

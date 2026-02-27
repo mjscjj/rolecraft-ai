@@ -20,9 +20,9 @@ import (
 
 // ChatHandler 对话处理器
 type ChatHandler struct {
-	db            *gorm.DB
-	config        *config.Config
-	thinkingSvc   *thinking.Service
+	db          *gorm.DB
+	config      *config.Config
+	thinkingSvc *thinking.Service
 }
 
 // NewChatHandler 创建对话处理器
@@ -36,10 +36,11 @@ func NewChatHandler(db *gorm.DB, cfg *config.Config) *ChatHandler {
 
 // CreateSessionRequest 创建会话请求
 type CreateSessionRequest struct {
-	RoleID          string `json:"roleId" binding:"required"`
-	Title           string `json:"title"`
-	Mode            string `json:"mode"`
-	AnythingLLMSlug string `json:"anythingLLMSlug"` // AnythingLLM Workspace Slug
+	RoleID          string                 `json:"roleId" binding:"required"`
+	Title           string                 `json:"title"`
+	Mode            string                 `json:"mode"`
+	AnythingLLMSlug string                 `json:"anythingLLMSlug"` // AnythingLLM Workspace Slug
+	ModelConfig     map[string]interface{} `json:"modelConfig"`
 }
 
 // SendMessageRequest 发送消息请求
@@ -79,6 +80,7 @@ func (h *ChatHandler) ListSessions(c *gin.Context) {
 // CreateSession 创建新会话
 func (h *ChatHandler) CreateSession(c *gin.Context) {
 	userId, _ := c.Get("userId")
+	userIDStr, _ := userId.(string)
 
 	var req CreateSessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -87,7 +89,7 @@ func (h *ChatHandler) CreateSession(c *gin.Context) {
 	}
 
 	var role models.Role
-	if result := h.db.First(&role, "id = ?", req.RoleID); result.Error != nil {
+	if result := h.db.First(&role, "id = ? AND user_id = ?", req.RoleID, userIDStr); result.Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "role not found"})
 		return
 	}
@@ -103,7 +105,7 @@ func (h *ChatHandler) CreateSession(c *gin.Context) {
 
 	session := models.ChatSession{
 		ID:        models.NewUUID(),
-		UserID:    userId.(string),
+		UserID:    userIDStr,
 		RoleID:    req.RoleID,
 		Title:     title,
 		Mode:      mode,
@@ -114,6 +116,10 @@ func (h *ChatHandler) CreateSession(c *gin.Context) {
 	// 存储 AnythingLLM Slug
 	if req.AnythingLLMSlug != "" {
 		session.AnythingLLMSlug = req.AnythingLLMSlug
+	}
+	if req.ModelConfig != nil {
+		configJSON, _ := json.Marshal(req.ModelConfig)
+		session.ModelConfig = models.JSON(configJSON)
 	}
 
 	if result := h.db.Create(&session); result.Error != nil {
@@ -152,6 +158,39 @@ func (h *ChatHandler) GetSession(c *gin.Context) {
 	})
 }
 
+// DeleteSession 删除会话及其消息
+func (h *ChatHandler) DeleteSession(c *gin.Context) {
+	userId, _ := c.Get("userId")
+	sessionId := c.Param("id")
+
+	var session models.ChatSession
+	if result := h.db.Where("id = ? AND user_id = ?", sessionId, userId).First(&session); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		return
+	}
+
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("session_id = ?", sessionId).Delete(&models.Message{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Delete(&models.ChatSession{}, "id = ? AND user_id = ?", sessionId, userId).Error; err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete session"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "success",
+		"data": gin.H{
+			"deleted": true,
+		},
+	})
+}
+
 // getAnythingLLMSlug 获取会话的 AnythingLLM Slug
 func (h *ChatHandler) getAnythingLLMSlug(session models.ChatSession) (string, error) {
 	// 优先从会话字段获取
@@ -178,7 +217,7 @@ func (h *ChatHandler) getAnythingLLMSlug(session models.ChatSession) (string, er
 }
 
 // callAnythingLLM 调用 AnythingLLM Chat API
-func (h *ChatHandler) callAnythingLLM(slug, message string) (string, error) {
+func (h *ChatHandler) callAnythingLLM(slug, message, apiKey string) (string, error) {
 	url := fmt.Sprintf("%s/api/v1/workspace/%s/chat", h.config.AnythingLLMURL, slug)
 
 	reqBody := AnythingLLMChatRequest{
@@ -197,7 +236,10 @@ func (h *ChatHandler) callAnythingLLM(slug, message string) (string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+h.config.AnythingLLMKey)
+	if apiKey == "" {
+		apiKey = h.config.AnythingLLMKey
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
@@ -219,9 +261,84 @@ func (h *ChatHandler) callAnythingLLM(slug, message string) (string, error) {
 	return chatResp.Response, nil
 }
 
+func (h *ChatHandler) parseSessionModelConfig(session models.ChatSession) map[string]interface{} {
+	if session.ModelConfig == "" {
+		return map[string]interface{}{}
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal([]byte(session.ModelConfig), &cfg); err != nil || cfg == nil {
+		return map[string]interface{}{}
+	}
+	return cfg
+}
+
+func (h *ChatHandler) resolveAnythingLLMKey(session models.ChatSession) string {
+	cfg := h.parseSessionModelConfig(session)
+	if k, ok := cfg["customAPIKey"].(string); ok && k != "" {
+		return k
+	}
+	return h.config.AnythingLLMKey
+}
+
+func (h *ChatHandler) buildKnowledgeContext(userID string, session models.ChatSession) string {
+	cfg := h.parseSessionModelConfig(session)
+	scope, _ := cfg["knowledgeScope"].(string)
+	if scope == "" || scope == "none" {
+		return ""
+	}
+
+	query := h.db.Model(&models.Document{}).Where("user_id = ? AND status = ?", userID, "completed")
+	if strings.HasPrefix(scope, "folder:") {
+		folderID := strings.TrimPrefix(scope, "folder:")
+		if folderID != "" && folderID != "default" {
+			query = query.Where("folder_id = ?", folderID)
+		}
+	}
+
+	var docs []models.Document
+	if err := query.Order("updated_at DESC").Limit(8).Find(&docs).Error; err != nil || len(docs) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("可参考知识库文档：\n")
+	for i, d := range docs {
+		b.WriteString(fmt.Sprintf("%d. %s (%s)\n", i+1, d.Name, d.FileType))
+	}
+	return b.String()
+}
+
+func (h *ChatHandler) buildComposedMessage(userID string, session models.ChatSession, userMessage string) string {
+	var role models.Role
+	rolePrompt := ""
+	if err := h.db.Where("id = ? AND user_id = ?", session.RoleID, userID).First(&role).Error; err == nil {
+		rolePrompt = role.SystemPrompt
+	}
+	kbContext := h.buildKnowledgeContext(userID, session)
+	if rolePrompt == "" && kbContext == "" {
+		return userMessage
+	}
+
+	var b strings.Builder
+	if rolePrompt != "" {
+		b.WriteString("角色设定：\n")
+		b.WriteString(rolePrompt)
+		b.WriteString("\n\n")
+	}
+	if kbContext != "" {
+		b.WriteString(kbContext)
+		b.WriteString("\n")
+	}
+	b.WriteString("请遵循角色设定，并优先利用知识库信息回答。\n\n")
+	b.WriteString("用户问题：\n")
+	b.WriteString(userMessage)
+	return b.String()
+}
+
 // Chat 发送消息（普通响应）- 集成 AnythingLLM
 func (h *ChatHandler) Chat(c *gin.Context) {
 	userId, _ := c.Get("userId")
+	userIDStr, _ := userId.(string)
 	sessionId := c.Param("id")
 
 	var req SendMessageRequest
@@ -248,13 +365,14 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 
 	// 获取 AnythingLLM Slug
 	var assistantContent string
+	composedMessage := h.buildComposedMessage(userIDStr, session, req.Content)
 	slug, err := h.getAnythingLLMSlug(session)
 	if err != nil {
 		// 如果没有配置 AnythingLLM，使用 Mock AI
 		assistantContent = h.callMockAI(req.Content)
 	} else {
 		// 调用 AnythingLLM API
-		assistantContent, err = h.callAnythingLLM(slug, req.Content)
+		assistantContent, err = h.callAnythingLLM(slug, composedMessage, h.resolveAnythingLLMKey(session))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": "anythingllm API error: " + err.Error(),
@@ -289,6 +407,7 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 // ChatStream 发送消息（流式响应 SSE）- 集成 AnythingLLM
 func (h *ChatHandler) ChatStream(c *gin.Context) {
 	userId, _ := c.Get("userId")
+	userIDStr, _ := userId.(string)
 	sessionId := c.Param("id")
 
 	var req SendMessageRequest
@@ -338,7 +457,7 @@ func (h *ChatHandler) ChatStream(c *gin.Context) {
 	url := fmt.Sprintf("%s/api/v1/workspace/%s/stream-chat", h.config.AnythingLLMURL, slug)
 
 	reqBody := AnythingLLMChatRequest{
-		Message: req.Content,
+		Message: h.buildComposedMessage(userIDStr, session, req.Content),
 		Mode:    "chat",
 	}
 
@@ -355,7 +474,7 @@ func (h *ChatHandler) ChatStream(c *gin.Context) {
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+h.config.AnythingLLMKey)
+	httpReq.Header.Set("Authorization", "Bearer "+h.resolveAnythingLLMKey(session))
 
 	client := &http.Client{}
 	resp, err := client.Do(httpReq)
@@ -511,7 +630,7 @@ func (h *ChatHandler) DeleteMessage(c *gin.Context) {
 		// 检查是否还有其他消息
 		var remainingCount int64
 		h.db.Model(&models.Message{}).Where("session_id = ?", sessionId).Count(&remainingCount)
-		
+
 		// 如果没有其他消息了，清空 AnythingLLM 的聊天历史
 		if remainingCount == 0 {
 			// 使用 AnythingLLM client 删除聊天历史
@@ -552,6 +671,7 @@ type SwitchRoleRequest struct {
 // @Router /api/v1/chat-sessions/{id}/switch-role [post]
 func (h *ChatHandler) SwitchRole(c *gin.Context) {
 	userId, _ := c.Get("userId")
+	userIDStr, _ := userId.(string)
 	sessionId := c.Param("id")
 
 	var req SwitchRoleRequest
@@ -569,7 +689,7 @@ func (h *ChatHandler) SwitchRole(c *gin.Context) {
 
 	// 验证新角色存在
 	var role models.Role
-	if result := h.db.First(&role, "id = ?", req.RoleID); result.Error != nil {
+	if result := h.db.First(&role, "id = ? AND user_id = ?", req.RoleID, userIDStr); result.Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "role not found"})
 		return
 	}
@@ -639,6 +759,10 @@ type UpdateSessionTitleRequest struct {
 	Title string `json:"title" binding:"required"`
 }
 
+type UpdateSessionConfigRequest struct {
+	ModelConfig map[string]interface{} `json:"modelConfig" binding:"required"`
+}
+
 // UpdateSessionTitle 更新会话标题
 func (h *ChatHandler) UpdateSessionTitle(c *gin.Context) {
 	userId, _ := c.Get("userId")
@@ -670,6 +794,42 @@ func (h *ChatHandler) UpdateSessionTitle(c *gin.Context) {
 		"data": gin.H{
 			"sessionId": session.ID,
 			"title":     session.Title,
+		},
+	})
+}
+
+// UpdateSessionConfig 更新会话配置（模型/温度/知识范围等）
+func (h *ChatHandler) UpdateSessionConfig(c *gin.Context) {
+	userId, _ := c.Get("userId")
+	sessionId := c.Param("id")
+
+	var req UpdateSessionConfigRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var session models.ChatSession
+	if result := h.db.Where("id = ? AND user_id = ?", sessionId, userId).First(&session); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		return
+	}
+
+	configJSON, _ := json.Marshal(req.ModelConfig)
+	session.ModelConfig = models.JSON(configJSON)
+	session.UpdatedAt = time.Now()
+
+	if result := h.db.Save(&session); result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update session config"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "success",
+		"data": gin.H{
+			"sessionId":   session.ID,
+			"modelConfig": req.ModelConfig,
 		},
 	})
 }
@@ -811,7 +971,7 @@ func (h *ChatHandler) exportToMarkdown(session models.ChatSession, messages []mo
 // exportToJSON 导出为 JSON 格式
 func (h *ChatHandler) exportToJSON(session models.ChatSession, messages []models.Message) string {
 	data := map[string]interface{}{
-		"session": session,
+		"session":  session,
 		"messages": messages,
 	}
 	jsonData, _ := json.MarshalIndent(data, "", "  ")
@@ -912,7 +1072,8 @@ func (h *ChatHandler) RegenerateMessage(c *gin.Context) {
 	if err != nil {
 		assistantContent = h.callMockAI(content)
 	} else {
-		assistantContent, err = h.callAnythingLLM(slug, content)
+		composed := h.buildComposedMessage(userId.(string), session, content)
+		assistantContent, err = h.callAnythingLLM(slug, composed, h.resolveAnythingLLMKey(session))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": "anythingllm API error: " + err.Error(),
@@ -1019,7 +1180,7 @@ func (h *ChatHandler) SearchSessions(c *gin.Context) {
 	// 搜索包含关键词的会话
 	var sessions []models.ChatSession
 	query := "%" + req.Query + "%"
-	
+
 	// 通过消息内容搜索会话
 	var messageSessionIDs []string
 	h.db.Table("messages").
@@ -1090,16 +1251,16 @@ func (h *ChatHandler) ChatStreamWithThinking(c *gin.Context) {
 	// 流式推送思考步骤
 	// 步骤 1: 理解问题
 	sender.AddThinkingStep(thinking.ThinkingUnderstand, "理解问题："+truncateString(req.Content, 50))
-	
+
 	// 步骤 2: 分析要素
 	sender.AddThinkingStep(thinking.ThinkingAnalyze, "分析关键要素和约束条件")
-	
+
 	// 步骤 3: 检索知识
 	sender.AddThinkingStep(thinking.ThinkingSearch, "从知识库检索相关信息")
-	
+
 	// 步骤 4: 组织答案
 	sender.AddThinkingStep(thinking.ThinkingOrganize, "组织回答结构和逻辑")
-	
+
 	// 获取实际响应（从 AnythingLLM 或 Mock AI）
 	var assistantContent string
 	slug, err := h.getAnythingLLMSlug(session)
@@ -1108,7 +1269,8 @@ func (h *ChatHandler) ChatStreamWithThinking(c *gin.Context) {
 		assistantContent = h.callMockAI(req.Content)
 	} else {
 		// 调用 AnythingLLM API
-		assistantContent, err = h.callAnythingLLM(slug, req.Content)
+		composed := h.buildComposedMessage(userId.(string), session, req.Content)
+		assistantContent, err = h.callAnythingLLM(slug, composed, h.resolveAnythingLLMKey(session))
 		if err != nil {
 			// 发送错误
 			jsonData, _ := json.Marshal(map[string]interface{}{
@@ -1120,16 +1282,16 @@ func (h *ChatHandler) ChatStreamWithThinking(c *gin.Context) {
 			return
 		}
 	}
-	
+
 	// 步骤 5: 得出结论
 	sender.AddThinkingStep(thinking.ThinkingConclude, "综合以上分析得出结论")
-	
+
 	// 完成思考过程
 	sender.Complete()
-	
+
 	// 发送最终答案
 	sender.SendAnswer(assistantContent)
-	
+
 	// 发送完成标记
 	jsonData, _ := json.Marshal(thinking.StreamChunk{
 		Type: "done",

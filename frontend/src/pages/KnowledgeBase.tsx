@@ -30,8 +30,7 @@ import {
   AlertTriangle,
   Check
 } from 'lucide-react';
-
-const API_BASE = 'http://localhost:8080/api/v1';
+import documentApi from '../api/document';
 
 // ==================== 类型定义 ====================
 
@@ -187,6 +186,7 @@ export const KnowledgeBase: FC = () => {
   // 标签批量更新
   const [showTagModal, setShowTagModal] = useState(false);
   const [bulkTags, setBulkTags] = useState<string[]>([]);
+  const [operationError, setOperationError] = useState('');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -220,24 +220,23 @@ export const KnowledgeBase: FC = () => {
   // ==================== 数据加载 ====================
 
   const loadDocuments = async () => {
-    if (!token) return;
+    if (!token) {
+      setLoading(false);
+      setOperationError('请先登录后使用知识库');
+      return;
+    }
     try {
-      const params = new URLSearchParams();
-      if (searchFilters.type) params.append('type', searchFilters.type);
-      if (searchFilters.status) params.append('status', searchFilters.status);
-      if (currentFolderId) params.append('folder', currentFolderId);
-      
-      const res = await fetch(`${API_BASE}/documents?${params}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
+      const data = await documentApi.list({
+        type: searchFilters.type || undefined,
+        status: searchFilters.status || undefined,
+        folder: currentFolderId,
       });
-      const data = await res.json();
-      if (data.data) {
-        setDocuments(data.data);
-        // 自动为文档生成标签
-        generateAutoTags(data.data);
-      }
-    } catch (err) {
+      setDocuments(data);
+      generateAutoTags(data);
+      setOperationError('');
+    } catch (err: any) {
       console.error('Failed to load documents:', err);
+      setOperationError(err?.message || '加载文档失败');
     } finally {
       setLoading(false);
     }
@@ -246,15 +245,12 @@ export const KnowledgeBase: FC = () => {
   const loadFolders = async () => {
     if (!token) return;
     try {
-      const res = await fetch(`${API_BASE}/folders`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.data) {
-        setFolders(data.data);
-      }
-    } catch (err) {
+      const data = await documentApi.listFolders();
+      setFolders(data);
+      setOperationError('');
+    } catch (err: any) {
       console.error('Failed to load folders:', err);
+      setOperationError(err?.message || '加载文件夹失败');
     }
   };
 
@@ -361,31 +357,24 @@ export const KnowledgeBase: FC = () => {
       const file = files[i];
       updateUploadProgress(i, { status: 'uploading', progress: 10 });
       
-      const formData = new FormData();
-      formData.append('file', file);
-      if (currentFolderId) formData.append('folderId', currentFolderId);
-
       try {
         updateUploadProgress(i, { progress: 50 });
-        const res = await fetch(`${API_BASE}/documents`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` },
-          body: formData,
-        });
-        const data = await res.json();
-        if (data.data) {
+        const data = await documentApi.uploadWithFolder(file, currentFolderId);
+        const uploadedDoc = Array.isArray(data) ? data[0] : data;
+        if (uploadedDoc) {
           updateUploadProgress(i, { 
             status: 'processing', 
             progress: 75,
             message: '正在处理...'
           });
-          setDocuments(prev => [data.data, ...prev]);
+          setDocuments(prev => [uploadedDoc as Document, ...prev]);
         }
-      } catch (err) {
+      } catch (err: any) {
         updateUploadProgress(i, { 
           status: 'failed', 
-          message: '上传失败'
+          message: err?.message || '上传失败'
         });
+        setOperationError(err?.message || '上传失败');
       }
     }
 
@@ -405,22 +394,14 @@ export const KnowledgeBase: FC = () => {
     if (!confirm(`确定要删除选中的 ${selectedDocs.size} 个文档吗？`)) return;
 
     try {
-      const res = await fetch(`${API_BASE}/documents/batch`, {
-        method: 'DELETE',
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ ids: Array.from(selectedDocs) }),
-      });
-      
-      if (res.ok) {
-        setDocuments(prev => prev.filter(d => !selectedDocs.has(d.id)));
-        setSelectedDocs(new Set());
-        setSelectAll(false);
-      }
-    } catch (err) {
+      await documentApi.batchDelete(Array.from(selectedDocs));
+      setDocuments(prev => prev.filter(d => !selectedDocs.has(d.id)));
+      setSelectedDocs(new Set());
+      setSelectAll(false);
+      setOperationError('');
+    } catch (err: any) {
       console.error('Failed to bulk delete:', err);
+      setOperationError(err?.message || '批量删除失败');
     }
   };
 
@@ -438,27 +419,16 @@ export const KnowledgeBase: FC = () => {
     if (!token || selectedDocs.size === 0) return;
 
     try {
-      const res = await fetch(`${API_BASE}/documents/batch/tags`, {
-        method: 'PUT',
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ 
-          ids: Array.from(selectedDocs),
-          tags: bulkTags
-        }),
-      });
-      
-      if (res.ok) {
-        setDocuments(prev => prev.map(d => 
-          selectedDocs.has(d.id) ? { ...d, tags: bulkTags } : d
-        ));
-        setShowTagModal(false);
-        setBulkTags([]);
-      }
-    } catch (err) {
+      await documentApi.batchUpdateTags(Array.from(selectedDocs), bulkTags);
+      setDocuments(prev => prev.map(d => 
+        selectedDocs.has(d.id) ? { ...d, tags: bulkTags } : d
+      ));
+      setShowTagModal(false);
+      setBulkTags([]);
+      setOperationError('');
+    } catch (err: any) {
       console.error('Failed to update tags:', err);
+      setOperationError(err?.message || '批量更新标签失败');
     }
   };
 
@@ -488,25 +458,14 @@ export const KnowledgeBase: FC = () => {
     if (!token || !newFolderName.trim()) return;
 
     try {
-      const res = await fetch(`${API_BASE}/folders`, {
-        method: 'POST',
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ 
-          name: newFolderName,
-          parentId: currentFolderId
-        }),
-      });
-      
-      if (res.ok) {
-        await loadFolders();
-        setShowCreateFolder(false);
-        setNewFolderName('');
-      }
-    } catch (err) {
+      await documentApi.createFolder(newFolderName, currentFolderId);
+      await loadFolders();
+      setShowCreateFolder(false);
+      setNewFolderName('');
+      setOperationError('');
+    } catch (err: any) {
       console.error('Failed to create folder:', err);
+      setOperationError(err?.message || '创建文件夹失败');
     }
   };
 
@@ -514,16 +473,12 @@ export const KnowledgeBase: FC = () => {
     if (!token || !confirm('确定要删除这个文件夹吗？')) return;
 
     try {
-      const res = await fetch(`${API_BASE}/folders/${folderId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      
-      if (res.ok) {
-        await loadFolders();
-      }
-    } catch (err) {
+      await documentApi.deleteFolder(folderId);
+      await loadFolders();
+      setOperationError('');
+    } catch (err: any) {
       console.error('Failed to delete folder:', err);
+      setOperationError(err?.message || '删除文件夹失败');
     }
   };
 
@@ -531,27 +486,16 @@ export const KnowledgeBase: FC = () => {
     if (!token) return;
 
     try {
-      const res = await fetch(`${API_BASE}/documents/batch/move`, {
-        method: 'PUT',
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ 
-          ids: Array.from(selectedDocs),
-          folderId
-        }),
-      });
-      
-      if (res.ok) {
-        setDocuments(prev => prev.map(d => 
-          selectedDocs.has(d.id) ? { ...d, folderId } : d
-        ));
-        setShowMoveModal(false);
-        setSelectedDocs(new Set());
-      }
-    } catch (err) {
+      await documentApi.batchMove(Array.from(selectedDocs), folderId);
+      setDocuments(prev => prev.map(d => 
+        selectedDocs.has(d.id) ? { ...d, folderId } : d
+      ));
+      setShowMoveModal(false);
+      setSelectedDocs(new Set());
+      setOperationError('');
+    } catch (err: any) {
       console.error('Failed to move documents:', err);
+      setOperationError(err?.message || '批量移动失败');
     }
   };
 
@@ -562,23 +506,22 @@ export const KnowledgeBase: FC = () => {
     setPreviewLoading(true);
     
     try {
-      const res = await fetch(`${API_BASE}/documents/${doc.id}/preview`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      
-      if (doc.fileType === 'pdf') {
+      const data = await documentApi.preview(doc.id, doc.fileType);
+
+      if (doc.fileType === 'pdf' && data.blob) {
         // PDF 预览
-        const blob = await res.blob();
+        const blob = data.blob;
         const url = URL.createObjectURL(blob);
         setPreviewContent(url);
       } else {
         // 文本类预览
-        const data = await res.json();
-        setPreviewContent(data.data?.content || '');
+        setPreviewContent(data.content || '');
       }
-    } catch (err) {
+      setOperationError('');
+    } catch (err: any) {
       console.error('Failed to preview:', err);
       setPreviewContent('无法加载预览');
+      setOperationError(err?.message || '文档预览失败');
     } finally {
       setPreviewLoading(false);
     }
@@ -588,19 +531,17 @@ export const KnowledgeBase: FC = () => {
     if (!token) return;
     
     try {
-      const res = await fetch(`${API_BASE}/documents/${doc.id}/download`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      
-      const blob = await res.blob();
+      const blob = await documentApi.download(doc.id);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = doc.name;
       a.click();
       window.URL.revokeObjectURL(url);
-    } catch (err) {
+      setOperationError('');
+    } catch (err: any) {
       console.error('Failed to download:', err);
+      setOperationError(err?.message || '下载失败');
     }
   };
 
@@ -613,39 +554,28 @@ export const KnowledgeBase: FC = () => {
     }
 
     try {
-      const startTime = performance.now();
-      const res = await fetch(`${API_BASE}/documents/search`, {
-        method: 'POST',
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          query: searchQuery,
-          filters: searchFilters,
-          sortBy,
-          sortOrder
-        }),
+      const data = await documentApi.search({
+        query: searchQuery,
+        filters: searchFilters,
+        sortBy,
+        sortOrder,
       });
-      
-      const data = await res.json();
-      if (data.data) {
-        setDocuments(data.data.documents);
-        
-        // 保存搜索历史
-        const historyItem: SearchHistory = {
-          id: Date.now().toString(),
-          query: searchQuery,
-          timestamp: new Date().toISOString(),
-          resultCount: data.data.documents.length
-        };
-        
-        const newHistory = [historyItem, ...searchHistory].slice(0, 10);
-        setSearchHistory(newHistory);
-        localStorage.setItem('searchHistory', JSON.stringify(newHistory));
-      }
-    } catch (err) {
+      setDocuments(data.documents);
+
+      const historyItem: SearchHistory = {
+        id: Date.now().toString(),
+        query: searchQuery,
+        timestamp: new Date().toISOString(),
+        resultCount: data.documents.length
+      };
+
+      const newHistory = [historyItem, ...searchHistory].slice(0, 10);
+      setSearchHistory(newHistory);
+      localStorage.setItem('searchHistory', JSON.stringify(newHistory));
+      setOperationError('');
+    } catch (err: any) {
       console.error('Failed to search:', err);
+      setOperationError(err?.message || '搜索失败');
     }
   }, [searchQuery, searchFilters, sortBy, sortOrder, token]);
 
@@ -662,17 +592,12 @@ export const KnowledgeBase: FC = () => {
     setPollingDocs(prev => new Set(prev).add(docId));
     
     try {
-      const res = await fetch(`${API_BASE}/documents/${docId}/status`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.data) {
-        setDocuments(prev => prev.map(doc => 
-          doc.id === docId 
-            ? { ...doc, status: data.data.status, updatedAt: data.data.updatedAt }
-            : doc
-        ));
-      }
+      const data = await documentApi.getStatus(docId);
+      setDocuments(prev => prev.map(doc => 
+        doc.id === docId 
+          ? { ...doc, status: data.status, updatedAt: data.updatedAt }
+          : doc
+      ));
     } catch (err) {
       console.error('Failed to poll status:', err);
     } finally {
@@ -690,16 +615,12 @@ export const KnowledgeBase: FC = () => {
     if (!token || !confirm('确定要删除这个文档吗？')) return;
 
     try {
-      const res = await fetch(`${API_BASE}/documents/${docId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.code === 200) {
-        setDocuments(documents.filter(d => d.id !== docId));
-      }
-    } catch (err) {
+      await documentApi.delete(docId);
+      setDocuments(documents.filter(d => d.id !== docId));
+      setOperationError('');
+    } catch (err: any) {
       console.error('Failed to delete:', err);
+      setOperationError(err?.message || '删除文档失败');
     }
   };
 
@@ -715,26 +636,18 @@ export const KnowledgeBase: FC = () => {
     if (!token || !editingDoc) return;
 
     try {
-      const res = await fetch(`${API_BASE}/documents/${editingDoc.id}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          name: editName,
-          tags: editTags
-        }),
+      const data = await documentApi.update(editingDoc.id, {
+        name: editName,
+        tags: editTags,
       });
-      const data = await res.json();
-      if (data.data) {
-        setDocuments(documents.map(d => 
-          d.id === editingDoc.id ? { ...d, ...data.data } : d
-        ));
-        setEditingDoc(null);
-      }
-    } catch (err) {
+      setDocuments(documents.map(d => 
+        d.id === editingDoc.id ? { ...d, ...data } : d
+      ));
+      setEditingDoc(null);
+      setOperationError('');
+    } catch (err: any) {
       console.error('Failed to update:', err);
+      setOperationError(err?.message || '更新文档失败');
     }
   };
 
@@ -801,6 +714,22 @@ export const KnowledgeBase: FC = () => {
           </label>
         </div>
       </div>
+
+      {operationError && (
+        <div className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span>{operationError}</span>
+          <button
+            onClick={() => {
+              setOperationError('');
+              loadDocuments();
+              loadFolders();
+            }}
+            className="rounded-md bg-white px-3 py-1 text-red-600 hover:bg-red-100"
+          >
+            重试
+          </button>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-5 gap-4">
