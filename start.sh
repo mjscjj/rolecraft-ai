@@ -22,8 +22,38 @@ echo ""
 
 # 停止旧服务
 echo "🛑 停止旧服务..."
-pkill -f "go run cmd/server" 2>/dev/null
-pkill -f "npm run dev" 2>/dev/null
+# 优先按 PID 文件停止
+if [ -f /tmp/rolecraft-backend.pid ]; then
+    kill "$(cat /tmp/rolecraft-backend.pid)" 2>/dev/null || true
+    rm -f /tmp/rolecraft-backend.pid
+fi
+if [ -f /tmp/rolecraft-frontend.pid ]; then
+    kill "$(cat /tmp/rolecraft-frontend.pid)" 2>/dev/null || true
+    rm -f /tmp/rolecraft-frontend.pid
+fi
+
+# 兜底：按端口清理残留进程（兼容 go run 生成的临时 main 进程）
+PORT_8080_PID=$(lsof -tiTCP:8080 -sTCP:LISTEN 2>/dev/null || true)
+if [ -n "$PORT_8080_PID" ]; then
+    kill $PORT_8080_PID 2>/dev/null || true
+    sleep 1
+    if lsof -tiTCP:8080 -sTCP:LISTEN >/dev/null 2>&1; then
+        kill -9 $PORT_8080_PID 2>/dev/null || true
+    fi
+fi
+PORT_5173_PID=$(lsof -tiTCP:5173 -sTCP:LISTEN 2>/dev/null || true)
+if [ -n "$PORT_5173_PID" ]; then
+    kill $PORT_5173_PID 2>/dev/null || true
+    sleep 1
+    if lsof -tiTCP:5173 -sTCP:LISTEN >/dev/null 2>&1; then
+        kill -9 $PORT_5173_PID 2>/dev/null || true
+    fi
+fi
+
+# 最后再按命令模式尝试清理
+pkill -f "go run cmd/server/main.go" 2>/dev/null || true
+pkill -f "vite" 2>/dev/null || true
+pkill -f "npm run dev" 2>/dev/null || true
 sleep 2
 echo "✅ 已停止旧服务"
 echo ""
@@ -31,6 +61,13 @@ echo ""
 # 启动后端
 echo "📦 启动后端服务..."
 cd backend
+# 加载 backend/.env，确保 AnythingLLM / DB / JWT 等配置生效
+if [ -f .env ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source .env
+    set +a
+fi
 nohup go run cmd/server/main.go > logs/server.log 2>&1 &
 BACKEND_PID=$!
 echo $BACKEND_PID > /tmp/rolecraft-backend.pid

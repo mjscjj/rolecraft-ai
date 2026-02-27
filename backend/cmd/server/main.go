@@ -14,6 +14,7 @@ import (
 	mw "rolecraft-ai/internal/api/middleware"
 	"rolecraft-ai/internal/config"
 	"rolecraft-ai/internal/database"
+	"rolecraft-ai/internal/models"
 	promptSvc "rolecraft-ai/internal/service/prompt"
 )
 
@@ -47,6 +48,28 @@ func main() {
 	db, err := database.InitSQLite(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&models.User{},
+		&models.Workspace{},
+		&models.Role{},
+		&models.Skill{},
+		&models.Document{},
+		&models.Folder{},
+		&models.ChatSession{},
+		&models.Message{},
+	); err != nil {
+		log.Fatalf("Failed to auto migrate database schema: %v", err)
+	}
+	// Some legacy SQLite files may miss new chat_sessions columns even after AutoMigrate.
+	var modelConfigCount int64
+	if err := db.Raw("SELECT COUNT(*) FROM pragma_table_info('chat_sessions') WHERE name = 'model_config'").Scan(&modelConfigCount).Error; err != nil {
+		log.Fatalf("Failed to check chat_sessions.model_config column: %v", err)
+	}
+	if modelConfigCount == 0 {
+		if err := db.Exec("ALTER TABLE chat_sessions ADD COLUMN model_config TEXT").Error; err != nil {
+			log.Fatalf("Failed to add chat_sessions.model_config column: %v", err)
+		}
 	}
 
 	// 设置 Gin 模式

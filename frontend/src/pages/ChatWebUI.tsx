@@ -116,6 +116,7 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
     preferredModel: selectedModel,
     preferredTemperature: temperature,
     knowledgeScope: selectedKnowledge,
+    chatMode,
     customAPIKey: localStorage.getItem('customAPIKey') || '',
   });
 
@@ -132,6 +133,7 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
       const preferredModel = typeof sessionConfig.preferredModel === 'string' ? sessionConfig.preferredModel : '';
       const preferredTemperature = Number(sessionConfig.preferredTemperature);
       const knowledgeScope = typeof sessionConfig.knowledgeScope === 'string' ? sessionConfig.knowledgeScope : '';
+      const sessionChatMode = sessionConfig.chatMode === 'deep' ? 'deep' : 'normal';
 
       if (preferredModel) {
         setSelectedModel(preferredModel);
@@ -142,6 +144,7 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
       if (knowledgeScope) {
         setSelectedKnowledge(knowledgeScope);
       }
+      setChatMode(sessionChatMode);
 
       const initialConfig = JSON.stringify({
         preferredModel: preferredModel || selectedModel,
@@ -149,6 +152,7 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
           ? preferredTemperature
           : temperature,
         knowledgeScope: knowledgeScope || selectedKnowledge,
+        chatMode: sessionChatMode || chatMode,
         customAPIKey: localStorage.getItem('customAPIKey') || '',
       });
       lastSavedConfigRef.current = initialConfig;

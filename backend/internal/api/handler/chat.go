@@ -57,7 +57,10 @@ type AnythingLLMChatRequest struct {
 
 // AnythingLLMChatResponse AnythingLLM 聊天响应
 type AnythingLLMChatResponse struct {
-	Response string `json:"response"`
+	Response     string   `json:"response"`
+	TextResponse string   `json:"textResponse"`
+	Error        string   `json:"error"`
+	Thoughts     []string `json:"thoughts"`
 }
 
 // ListSessions 获取对话会话列表
@@ -257,7 +260,12 @@ func (h *ChatHandler) callAnythingLLM(slug, message, apiKey string) (string, err
 	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
 		return "", fmt.Errorf("failed to decode response: %w", err)
 	}
-
+	if chatResp.Error != "" {
+		return "", fmt.Errorf("anythingllm chat error: %s", chatResp.Error)
+	}
+	if chatResp.TextResponse != "" {
+		return chatResp.TextResponse, nil
+	}
 	return chatResp.Response, nil
 }
 
@@ -314,7 +322,29 @@ func (h *ChatHandler) buildComposedMessage(userID string, session models.ChatSes
 	if err := h.db.Where("id = ? AND user_id = ?", session.RoleID, userID).First(&role).Error; err == nil {
 		rolePrompt = role.SystemPrompt
 	}
+	cfg := h.parseSessionModelConfig(session)
+	chatMode, _ := cfg["chatMode"].(string)
 	kbContext := h.buildKnowledgeContext(userID, session)
+
+	// Deep mode: use AnythingLLM agent invocation so web-browsing skill can be called.
+	if chatMode == "deep" {
+		var b strings.Builder
+		b.WriteString("@agent ")
+		if rolePrompt != "" {
+			b.WriteString("角色设定：")
+			b.WriteString(rolePrompt)
+			b.WriteString("\n")
+		}
+		if kbContext != "" {
+			b.WriteString(kbContext)
+			b.WriteString("\n")
+		}
+		b.WriteString("请优先联网搜索最新信息，并给出可点击来源链接。\n")
+		b.WriteString("用户问题：")
+		b.WriteString(userMessage)
+		return b.String()
+	}
+
 	if rolePrompt == "" && kbContext == "" {
 		return userMessage
 	}
