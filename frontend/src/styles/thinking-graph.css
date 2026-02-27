@@ -1,0 +1,559 @@
+/**
+ * ThinkingGraph 样式表
+ * 思维导图式 AI 思考路径展示组件样式
+ */
+
+/* ============== 容器 ============== */
+.thinking-graph-container {
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--tg-bg, #ffffff);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.thinking-graph-container.theme-dark {
+  --tg-bg: #1a1a2e;
+  --tg-node-bg: #16213e;
+  --tg-node-border: #0f3460;
+  --tg-text: #e8e8e8;
+  --tg-text-muted: #a0a0a0;
+  --tg-edge-color: #4a5568;
+}
+
+.thinking-graph-container.theme-light {
+  --tg-bg: #ffffff;
+  --tg-node-bg: #ffffff;
+  --tg-node-border: #e2e8f0;
+  --tg-text: #1a202c;
+  --tg-text-muted: #718096;
+  --tg-edge-color: #cbd5e0;
+}
+
+/* ============== React Flow 覆盖 ============== */
+.thinking-flow {
+  background: transparent;
+}
+
+.thinking-flow .react-flow__node {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.thinking-flow .react-flow__node:hover {
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.15));
+}
+
+.thinking-flow .react-flow__edge-path {
+  stroke: var(--tg-edge-color, #cbd5e0);
+  stroke-width: 2;
+  transition: stroke 0.2s ease;
+}
+
+.thinking-flow .react-flow__edge:hover .react-flow__edge-path {
+  stroke: #3b82f6;
+  stroke-width: 3;
+}
+
+/* ============== 节点样式 ============== */
+.thinking-node {
+  background: var(--tg-node-bg, #ffffff);
+  border: 2px solid var(--tg-node-border, #e2e8f0);
+  border-radius: 12px;
+  padding: 0;
+  min-width: 200px;
+  max-width: 300px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 14px;
+  color: var(--tg-text, #1a202c);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.thinking-node.selected {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2), 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* 节点类型颜色 */
+.thinking-node.node-type-root {
+  border-top: 4px solid #3b82f6;
+}
+
+.thinking-node.node-type-analysis {
+  border-top: 4px solid #8b5cf6;
+}
+
+.thinking-node.node-type-planning {
+  border-top: 4px solid #06b6d4;
+}
+
+.thinking-node.node-type-execution {
+  border-top: 4px solid #10b981;
+}
+
+.thinking-node.node-type-decision {
+  border-top: 4px solid #f59e0b;
+}
+
+.thinking-node.node-type-tool {
+  border-top: 4px solid #ef4444;
+}
+
+.thinking-node.node-type-reflection {
+  border-top: 4px solid #ec4899;
+}
+
+.thinking-node.node-type-conclusion {
+  border-top: 4px solid #22c55e;
+}
+
+/* 节点状态 */
+.thinking-node.node-pending {
+  opacity: 0.6;
+}
+
+.thinking-node.node-active {
+  border-color: #3b82f6;
+  animation: nodePulse 2s infinite;
+}
+
+.thinking-node.node-completed {
+  opacity: 1;
+}
+
+.thinking-node.node-skipped {
+  opacity: 0.4;
+  filter: grayscale(0.8);
+}
+
+.thinking-node.node-error {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.05);
+}
+
+@keyframes nodePulse {
+  0%, 100% {
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  }
+  50% {
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  }
+}
+
+/* 节点头部 */
+.node-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.02);
+  border-bottom: 1px solid var(--tg-node-border, #e2e8f0);
+  cursor: pointer;
+  user-select: none;
+}
+
+.node-header:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.node-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.node-title {
+  font-weight: 600;
+  font-size: 14px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-confidence {
+  font-size: 11px;
+  padding: 2px 6px;
+  background: #3b82f6;
+  color: white;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+/* 节点状态指示器 */
+.node-status-indicator {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #cbd5e0;
+}
+
+.status-dot.active {
+  background: #3b82f6;
+  animation: statusPulse 1.5s infinite;
+}
+
+.status-dot.error {
+  background: #ef4444;
+}
+
+@keyframes statusPulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.2);
+  }
+}
+
+/* 节点内容 */
+.node-content {
+  padding: 12px 16px;
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.node-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--tg-text, #1a202c);
+  margin-bottom: 12px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.node-text::-webkit-scrollbar {
+  width: 4px;
+}
+
+.node-text::-webkit-scrollbar-thumb {
+  background: var(--tg-node-border, #e2e8f0);
+  border-radius: 2px;
+}
+
+/* 节点元数据 */
+.node-metadata {
+  margin: 12px 0;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.meta-item {
+  margin: 6px 0;
+  color: var(--tg-text-muted, #718096);
+}
+
+.meta-item strong {
+  color: var(--tg-text, #1a202c);
+  margin-right: 4px;
+}
+
+.meta-item.error {
+  color: #ef4444;
+}
+
+/* 节点底部 */
+.node-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid var(--tg-node-border, #e2e8f0);
+  font-size: 11px;
+  color: var(--tg-text-muted, #718096);
+}
+
+.node-time {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+}
+
+.node-duration {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+/* ============== 手柄 (连接点) ============== */
+.handle {
+  width: 12px !important;
+  height: 12px !important;
+  background: #3b82f6 !important;
+  border: 2px solid white !important;
+  transition: all 0.2s ease;
+}
+
+.handle:hover {
+  transform: scale(1.3);
+  background: #2563eb !important;
+}
+
+.handle.target {
+  background: #10b981 !important;
+}
+
+.handle.source {
+  background: #3b82f6 !important;
+}
+
+/* ============== 边标签 ============== */
+.edge-label-fo {
+  pointer-events: none;
+}
+
+.edge-label {
+  background: white;
+  border: 1px solid var(--tg-node-border, #e2e8f0);
+  border-radius: 12px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--tg-text-muted, #718096);
+  white-space: nowrap;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* ============== 控制面板 ============== */
+.layout-panel,
+.stats-panel {
+  background: white;
+  border: 1px solid var(--tg-node-border, #e2e8f0);
+  border-radius: 8px;
+  padding: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.theme-dark .layout-panel,
+.theme-dark .stats-panel {
+  background: var(--tg-node-bg, #16213e);
+  border-color: var(--tg-node-border, #0f3460);
+}
+
+.layout-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.layout-buttons button {
+  padding: 6px 12px;
+  border: 1px solid var(--tg-node-border, #e2e8f0);
+  background: transparent;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: var(--tg-text, #1a202c);
+}
+
+.layout-buttons button:hover {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: #3b82f6;
+}
+
+.layout-buttons button.active {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
+
+.stats-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--tg-text, #1a202c);
+}
+
+.stats-info span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ============== 小地图覆盖 ============== */
+.thinking-flow .react-flow__minimap {
+  background: var(--tg-bg, #ffffff);
+  border: 1px solid var(--tg-node-border, #e2e8f0);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* ============== 控件覆盖 ============== */
+.thinking-flow .react-flow__controls {
+  background: white;
+  border: 1px solid var(--tg-node-border, #e2e8f0);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.theme-dark .thinking-flow .react-flow__controls {
+  background: var(--tg-node-bg, #16213e);
+  border-color: var(--tg-node-border, #0f3460);
+}
+
+.thinking-flow .react-flow__controls-button {
+  border: none;
+  border-bottom: 1px solid var(--tg-node-border, #e2e8f0);
+  background: transparent;
+}
+
+.theme-dark .thinking-flow .react-flow__controls-button {
+  border-bottom-color: var(--tg-node-border, #0f3460);
+}
+
+.thinking-flow .react-flow__controls-button:hover {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.thinking-flow .react-flow__controls-button svg {
+  fill: var(--tg-text, #1a202c);
+}
+
+/* ============== 背景 ============== */
+.thinking-flow .react-flow__background {
+  background: var(--tg-bg, #ffffff);
+}
+
+.thinking-flow .react-flow__background .react-flow__background-pattern circle {
+  fill: var(--tg-node-border, #e2e8f0);
+}
+
+/* ============== 响应式 ============== */
+@media (max-width: 768px) {
+  .thinking-graph-container {
+    min-height: 300px;
+  }
+
+  .thinking-node {
+    min-width: 160px;
+    max-width: 240px;
+  }
+
+  .node-header {
+    padding: 10px 12px;
+  }
+
+  .node-content {
+    padding: 10px 12px;
+  }
+
+  .layout-panel {
+    top: 10px !important;
+    right: 10px !important;
+  }
+
+  .stats-panel {
+    top: 10px !important;
+    left: 10px !important;
+  }
+
+  .layout-buttons button {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+}
+
+/* ============== 动画效果 ============== */
+.thinking-node-enter {
+  animation: nodeEnter 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes nodeEnter {
+  from {
+    opacity: 0;
+    transform: scale(0.8) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.thinking-edge-enter {
+  animation: edgeEnter 0.3s ease;
+}
+
+@keyframes edgeEnter {
+  from {
+    stroke-dasharray: 1000;
+    stroke-dashoffset: 1000;
+  }
+  to {
+    stroke-dasharray: 1000;
+    stroke-dashoffset: 0;
+  }
+}
+
+/* ============== 加载状态 ============== */
+.thinking-graph-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 14px;
+  color: var(--tg-text-muted, #718096);
+}
+
+.thinking-graph-loading::before {
+  content: '';
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--tg-node-border, #e2e8f0);
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  margin-right: 12px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ============== 工具提示 ============== */
+.thinking-node[title] {
+  position: relative;
+}
+
+.thinking-node[title]:hover::after {
+  content: attr(title);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 1000;
+  pointer-events: none;
+}

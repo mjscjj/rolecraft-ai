@@ -77,3 +77,44 @@ export interface ApiResponse<T = any> {
   message: string;
   data: T;
 }
+
+// 角色能力
+export interface RoleCapability {
+  creativity: number;
+  logic: number;
+  professionalism: number;
+  empathy: number;
+  efficiency: number;
+  adaptability: number;
+}
+
+// 测试相关类型
+export interface TestMessage {
+  content: string;
+  responseTime: number;
+  rating?: number;
+}
+
+export interface TestVersion {
+  versionId: string;
+  versionName: string;
+  systemPrompt: string;
+  modelConfig?: Record<string, any>;
+}
+
+export interface TestResult {
+  versionId: string;
+  versionName: string;
+  response: string;
+  responseTime: number;
+  score: number;
+  rating: number;
+  feedback: string;
+}
+
+export interface TestHistoryItem {
+  testId: string;
+  question: string;
+  results: TestResult[];
+  timestamp: Date;
+}

@@ -1,0 +1,380 @@
+/* ThinkingDisplay.css - 深度思考展示样式 */
+
+.thinking-display {
+  margin: 16px 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4e8eb 100%);
+  border-left: 4px solid #667eea;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+}
+
+.thinking-display:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+/* Header */
+.thinking-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.3s ease;
+}
+
+.thinking-header:hover {
+  background: linear-gradient(135deg, #5568d3 0%, #6a4190 100%);
+}
+
+.thinking-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.thinking-header-icon {
+  font-size: 20px;
+  animation: thinking-pulse 2s ease-in-out infinite;
+}
+
+@keyframes thinking-pulse {
+  0%, 100% { 
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% { 
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+}
+
+.thinking-header-title {
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.thinking-streaming-indicator {
+  font-size: 12px;
+  opacity: 0.9;
+  font-weight: normal;
+}
+
+.thinking-header-meta {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-left: 8px;
+}
+
+.thinking-toggle-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.2s ease;
+}
+
+.thinking-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.thinking-toggle-icon {
+  font-size: 10px;
+  transition: transform 0.3s ease;
+}
+
+.thinking-toggle-icon.expanded {
+  transform: rotate(180deg);
+}
+
+/* Content */
+.thinking-content {
+  padding: 16px;
+  background: white;
+}
+
+/* Progress Bar */
+.thinking-progress {
+  width: 100%;
+  height: 4px;
+  background: #e4e8eb;
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.thinking-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  transition: width 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.thinking-progress-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+  animation: progress-shine 1.5s infinite;
+}
+
+@keyframes progress-shine {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Steps */
+.thinking-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.thinking-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  transition: all 0.3s ease;
+  position: relative;
+  animation: step-slide-in 0.4s ease-out forwards;
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+@keyframes step-slide-in {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.thinking-step:hover {
+  background: #f1f3f5;
+  border-color: #dee2e6;
+}
+
+.thinking-step.processing {
+  background: linear-gradient(135deg, #e8f4fd 0%, #f0e8fd 100%);
+  border-color: #667eea;
+}
+
+.thinking-step.completed {
+  background: #f0fff4;
+  border-color: #43e97b;
+}
+
+.thinking-step.active {
+  border-width: 2px;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.15);
+}
+
+.thinking-step-header {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.thinking-step-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.thinking-step-label {
+  font-size: 14px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.thinking-step-duration {
+  font-size: 11px;
+  color: #6c757d;
+  background: #e9ecef;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.thinking-step-loading {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.loading-dot {
+  width: 6px;
+  height: 6px;
+  background: #667eea;
+  border-radius: 50%;
+  animation: loading-bounce 1.4s infinite ease-in-out both;
+}
+
+.loading-dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.loading-dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+@keyframes loading-bounce {
+  0%, 80%, 100% { 
+    transform: scale(0);
+    opacity: 0.5;
+  }
+  40% { 
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.thinking-step-content {
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: white;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #495057;
+  line-height: 1.6;
+  border-left: 3px solid #667eea;
+}
+
+.thinking-step-check {
+  width: 24px;
+  height: 24px;
+  background: #43e97b;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+  flex-shrink: 0;
+  animation: check-pop 0.3s ease-out;
+}
+
+@keyframes check-pop {
+  0% { transform: scale(0); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+/* Complete Badge */
+.thinking-complete-badge {
+  margin-top: 16px;
+  padding: 12px;
+  background: linear-gradient(135deg, #f0fff4 0%, #e6fffa 100%);
+  border: 1px solid #43e97b;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: #059669;
+  animation: badge-fade-in 0.5s ease-out;
+}
+
+@keyframes badge-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .thinking-header {
+    padding: 10px 12px;
+  }
+
+  .thinking-header-title {
+    font-size: 14px;
+  }
+
+  .thinking-content {
+    padding: 12px;
+  }
+
+  .thinking-step {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .thinking-step-label {
+    font-size: 13px;
+  }
+
+  .thinking-step-content {
+    font-size: 12px;
+  }
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+  .thinking-display {
+    background: linear-gradient(135deg, #2d3748 0%, #1a202c 100%);
+    border-left-color: #667eea;
+  }
+
+  .thinking-content {
+    background: #1a202c;
+  }
+
+  .thinking-step {
+    background: #2d3748;
+    border-color: #4a5568;
+  }
+
+  .thinking-step:hover {
+    background: #4a5568;
+  }
+
+  .thinking-step.processing {
+    background: linear-gradient(135deg, #2c5282 0%, #2d3748 100%);
+    border-color: #667eea;
+  }
+
+  .thinking-step.completed {
+    background: #22543d;
+    border-color: #43e97b;
+  }
+
+  .thinking-step-content {
+    background: #1a202c;
+    color: #e2e8f0;
+  }
+
+  .thinking-header-meta {
+    color: rgba(255, 255, 255, 0.7);
+  }
+}

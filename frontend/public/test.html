@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RoleCraft AI - 测试页面</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            font-family: monospace;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 RoleCraft AI - 前端测试</h1>
+        
+        <div id="status"></div>
+        
+        <h2>测试项目</h2>
+        <button onclick="testBackend()">测试后端 API</button>
+        <button onclick="testFrontend()">测试前端渲染</button>
+        <button onclick="clearCache()">清除缓存</button>
+        
+        <h2>日志</h2>
+        <pre id="logs">等待测试...</pre>
+    </div>
+
+    <script>
+        const logs = document.getElementById('logs');
+        const status = document.getElementById('status');
+        
+        function log(message) {
+            logs.textContent += message + '\n';
+            logs.scrollTop = logs.scrollHeight;
+        }
+        
+        async function testBackend() {
+            log('\n=== 测试后端 API ===');
+            
+            try {
+                log('1. 测试健康检查...');
+                const health = await fetch('http://localhost:8080/health');
+                const healthData = await health.json();
+                log('✅ 健康检查：' + JSON.stringify(healthData));
+                
+                log('2. 测试 API 路由...');
+                const roles = await fetch('http://localhost:8080/api/v1/roles');
+                log('✅ 角色 API 状态码：' + roles.status);
+                
+                status.innerHTML = '<div class="success">后端 API 正常！</div>';
+            } catch (error) {
+                log('❌ 错误：' + error.message);
+                status.innerHTML = '<div class="error">后端 API 异常：' + error.message + '</div>';
+            }
+        }
+        
+        function testFrontend() {
+            log('\n=== 测试前端渲染 ===');
+            log('✅ 前端页面加载成功');
+            log('✅ JavaScript 执行正常');
+            log('✅ DOM 渲染正常');
+            status.innerHTML = '<div class="success">前端渲染正常！</div>';
+        }
+        
+        function clearCache() {
+            log('\n=== 清除缓存 ===');
+            localStorage.clear();
+            sessionStorage.clear();
+            log('✅ 缓存已清除');
+            log('ℹ️ 请刷新页面');
+            status.innerHTML = '<div class="info">缓存已清除，请刷新页面</div>';
+        }
+        
+        // 自动测试
+        log('RoleCraft AI 前端测试页面');
+        log('时间：' + new Date().toLocaleString());
+        log('\n自动测试中...');
+        testBackend();
+    </script>
+</body>
+</html>

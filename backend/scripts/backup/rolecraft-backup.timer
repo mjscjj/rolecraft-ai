@@ -1,0 +1,20 @@
+[Unit]
+Description=RoleCraft AI Database Backup Timer
+Requires=rolecraft-backup.service
+Documentation=https://github.com/rolecraft-ai/rolecraft-ai
+
+[Timer]
+# 每天凌晨 2 点执行
+OnCalendar=*-*-* 02:00:00
+
+# 如果系统关机错过执行时间，开机后补执行
+Persistent=true
+
+# 随机延迟最多 15 分钟，避免多服务器同时备份
+RandomizedDelaySec=900
+
+# 立即执行一次（用于测试）
+# OnBootSec=1min
+
+[Install]
+WantedBy=timers.target

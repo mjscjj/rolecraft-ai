@@ -1,5 +1,5 @@
 import type { FC } from 'react'; import { useState } from 'react';
-import { Search, Plus, Filter, Grid3X3, List } from 'lucide-react';
+import { Search, Plus, Filter, Grid3X3, List, Sparkles } from 'lucide-react';
 import { RoleCard } from '../components/RoleCard';
 import type { Role } from '../types';
 
@@ -102,13 +102,22 @@ export const RoleMarket: FC = () => {
           <h1 className="text-2xl font-bold text-slate-900">角色中心</h1>
           <p className="text-slate-500 mt-1">发现和使用 AI 角色，或创建属于你自己的角色</p>
         </div>
-        <a 
-          href="/roles/create"
-          className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors"
-        >
-          <Plus className="w-5 h-5" />
-          创建角色
-        </a>
+        <div className="flex items-center gap-3">
+          <a 
+            href="/roles/wizard"
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-primary to-primary-dark text-white rounded-lg hover:from-primary-dark hover:to-primary transition-all shadow-md shadow-primary/20"
+          >
+            <Sparkles className="w-5 h-5" />
+            零提示词创建
+          </a>
+          <a 
+            href="/roles/create"
+            className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors"
+          >
+            <Plus className="w-5 h-5" />
+            传统创建
+          </a>
+        </div>
       </div>
 
       {/* Search & Filter */}

@@ -1,0 +1,21 @@
+# RoleCraft AI 备份 Cron 配置
+# 使用方法：crontab /path/to/rolecraft-backup.cron
+
+# 环境变量
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+BACKUP_DIR=/path/to/rolecraft-ai/backend/scripts/backup/backups
+DB_PATH=/path/to/rolecraft-ai/backend/rolecraft.db
+RETENTION_DAYS=30
+
+# 每天凌晨 2 点备份
+0 2 * * * /path/to/rolecraft-ai/backend/scripts/backup/backup.sh backup >> /var/log/rolecraft-backup.log 2>&1
+
+# 每周日凌晨 3 点创建完整 ZIP 备份（包含配置文件）
+0 3 * * 0 /path/to/rolecraft-ai/backend/scripts/backup/backup.sh backup-full >> /var/log/rolecraft-backup.log 2>&1
+
+# 每天凌晨 4 点清理旧备份
+0 4 * * * /path/to/rolecraft-ai/backend/scripts/backup/backup.sh cleanup >> /var/log/rolecraft-backup.log 2>&1
+
+# 每 6 小时检查备份状态（监控）
+0 */6 * * * /path/to/rolecraft-ai/backend/scripts/backup/monitor_backup.sh >> /var/log/rolecraft-backup-monitor.log 2>&1

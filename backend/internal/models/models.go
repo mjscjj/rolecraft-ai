@@ -70,13 +70,25 @@ type Document struct {
 	FileType        string    `json:"fileType"`
 	FileSize        int64     `json:"fileSize"`
 	FilePath        string    `json:"filePath"` // 临时存储路径
+	FolderID        string    `json:"folderId" gorm:"index"` // 文件夹 ID
 	AnythingLLMHash string    `json:"anythingLLMHash" gorm:"index"` // 新增：AnythingLLM 文档 hash
 	Status          string    `json:"status" gorm:"default:'pending'"` // pending/processing/completed/failed
 	ChunkCount      int       `json:"chunkCount"`
 	ErrorMessage    string    `json:"errorMessage"`
+	Similarity      float64   `json:"similarity" gorm:"-"` // 搜索相似度 (不存储到数据库)
 	Metadata        JSON      `json:"metadata" gorm:"type:text"`
 	CreatedAt       time.Time `json:"createdAt"`
 	UpdatedAt       time.Time `json:"updatedAt"`
+}
+
+// Folder 文件夹
+type Folder struct {
+	ID        string    `json:"id" gorm:"primaryKey"`
+	UserID    string    `json:"userId" gorm:"index;not null"`
+	Name      string    `json:"name"`
+	ParentID  string    `json:"parentId" gorm:"index"` // 父文件夹 ID，空表示根目录
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // ChatSession 对话会话 - 添加关联
@@ -87,6 +99,7 @@ type ChatSession struct {
 	Title           string    `json:"title"`
 	Mode            string    `json:"mode" gorm:"default:'quick'"` // quick/task
 	AnythingLLMSlug string    `json:"anythingLLMSlug" gorm:"index"` // 新增：关联 Workspace
+	ModelConfig     JSON      `json:"modelConfig" gorm:"type:text"` // 新增：存储元数据（归档状态等）
 	CreatedAt       time.Time `json:"createdAt"`
 	UpdatedAt       time.Time `json:"updatedAt"`
 }
@@ -108,6 +121,7 @@ func (Workspace) TableName() string   { return "workspaces" }
 func (Role) TableName() string        { return "roles" }
 func (Skill) TableName() string       { return "skills" }
 func (Document) TableName() string    { return "documents" }
+func (Folder) TableName() string      { return "folders" }
 func (ChatSession) TableName() string { return "chat_sessions" }
 func (Message) TableName() string     { return "messages" }
 

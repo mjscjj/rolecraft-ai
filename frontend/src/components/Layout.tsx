@@ -6,7 +6,8 @@ import {
   Settings,
   Plus,
   Search,
-  Bot
+  Bot,
+  BarChart3
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -17,7 +18,8 @@ const navItems = [
   { icon: LayoutDashboard, label: '仪表盘', path: '/' },
   { icon: Bot, label: '角色市场', path: '/roles' },
   { icon: MessageSquare, label: '对话', path: '/chat' },
-  { icon: BookOpen, label: '知识库', path: '/knowledge' },
+  { icon: BookOpen, label: '知识库', path: '/documents' },
+  { icon: BarChart3, label: '数据分析', path: '/analytics' },
   { icon: Settings, label: '设置', path: '/settings' },
 ];
 

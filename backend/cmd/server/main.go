@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-contrib/cors"
@@ -10,10 +11,14 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 	_ "rolecraft-ai/docs"
 	"rolecraft-ai/internal/api/handler"
-	"rolecraft-ai/internal/api/middleware"
+	mw "rolecraft-ai/internal/api/middleware"
 	"rolecraft-ai/internal/config"
 	"rolecraft-ai/internal/database"
+	promptSvc "rolecraft-ai/internal/service/prompt"
 )
+
+// ServiceStartTime 服务启动时间
+var ServiceStartTime = time.Now()
 
 // @title RoleCraft AI API
 // @version 1.0
@@ -55,20 +60,28 @@ func main() {
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
-		ExposeHeaders:    []string{"Content-Length"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Request-ID"},
+		ExposeHeaders:    []string{"Content-Length", "X-Request-ID"},
 		AllowCredentials: true,
 	}))
 
-	// 健康检查
-	// @Summary 健康检查
-	// @Description 检查服务是否正常运行
-	// @Tags Health
-	// @Success 200 {object} map[string]string
-	// @Router /health [get]
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
-	})
+	// ===== 健康检查和监控路由 =====
+	
+	healthHandler := handler.NewHealthHandler(db, cfg)
+	
+	// 简单健康检查（向后兼容）
+	r.GET("/health", handler.SimpleHealthCheck)
+	
+	// 综合健康检查
+	r.GET("/api/v1/health", healthHandler.Health)
+	
+	// Kubernetes 探针
+	r.GET("/api/v1/ready", healthHandler.Ready)
+	r.GET("/api/v1/live", healthHandler.Live)
+	
+	// 性能指标
+	r.GET("/api/v1/metrics", healthHandler.Metrics)
+	r.GET("/api/v1/db/stats", healthHandler.DBStats)
 
 	// Swagger API 文档
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -87,11 +100,11 @@ func main() {
 
 		// 角色模板 (公开)
 		roleHandler := handler.NewRoleHandler(db, cfg)
-		api.GET("/roles/templates", roleHandler.GetTemplates)
+		api.GET("/roles/templates", roleHandler.GetEnhancedTemplates)
 
 		// 需要认证的路由
 		authorized := api.Group("/")
-		authorized.Use(middleware.JWTAuth())
+		authorized.Use(mw.JWTAuth())
 		{
 			// 用户
 			userHandler := handler.NewUserHandler(db)
@@ -113,8 +126,20 @@ func main() {
 			authorized.POST("/documents/search", docHandler.Search)
 			authorized.GET("/documents/:id", docHandler.Get)
 			authorized.GET("/documents/:id/status", docHandler.GetStatus)
+			authorized.GET("/documents/:id/preview", docHandler.Preview)
+			authorized.GET("/documents/:id/download", docHandler.Download)
 			authorized.PUT("/documents/:id", docHandler.Update)
 			authorized.DELETE("/documents/:id", docHandler.Delete)
+			
+			// 批量操作
+			authorized.DELETE("/documents/batch", docHandler.BatchDelete)
+			authorized.PUT("/documents/batch/move", docHandler.BatchMove)
+			authorized.PUT("/documents/batch/tags", docHandler.BatchUpdateTags)
+			
+			// 文件夹
+			authorized.GET("/folders", docHandler.ListFolders)
+			authorized.POST("/folders", docHandler.CreateFolder)
+			authorized.DELETE("/folders/:id", docHandler.DeleteFolder)
 
 			// 对话
 			chatHandler := handler.NewChatHandler(db, cfg)
@@ -124,8 +149,68 @@ func main() {
 			authorized.POST("/chat-sessions/:id/switch-role", chatHandler.WorkspaceAuth(), chatHandler.SwitchRole)
 			authorized.GET("/chat-sessions/:id/sync", chatHandler.WorkspaceAuth(), chatHandler.SyncSession)
 			authorized.DELETE("/chat-sessions/:id/messages/:msgId", chatHandler.WorkspaceAuth(), chatHandler.DeleteMessage)
+			authorized.PUT("/chat-sessions/:id/title", chatHandler.WorkspaceAuth(), chatHandler.UpdateSessionTitle)
+			authorized.POST("/chat-sessions/:id/archive", chatHandler.WorkspaceAuth(), chatHandler.ArchiveSession)
+			authorized.POST("/chat-sessions/:id/export", chatHandler.WorkspaceAuth(), chatHandler.ExportSession)
+			authorized.POST("/chat-sessions/search", chatHandler.WorkspaceAuth(), chatHandler.SearchSessions)
+			authorized.PUT("/chat/:id/messages/:msgId", chatHandler.WorkspaceAuth(), chatHandler.UpdateMessage)
+			authorized.POST("/chat/:id/messages/:msgId/regenerate", chatHandler.WorkspaceAuth(), chatHandler.RegenerateMessage)
+			authorized.POST("/chat/messages/:msgId/rate", chatHandler.WorkspaceAuth(), chatHandler.RateMessage)
 			authorized.POST("/chat/:id/complete", chatHandler.WorkspaceAuth(), chatHandler.Chat)
 			authorized.POST("/chat/:id/stream", chatHandler.WorkspaceAuth(), chatHandler.ChatStream)
+
+			// 测试
+			testHandler := handler.NewTestHandler(db)
+			authorized.POST("/test/message", testHandler.SendMessage)
+			authorized.POST("/test/ab", testHandler.RunABTest)
+			authorized.POST("/test/compare", testHandler.CompareVersions)
+			authorized.POST("/test/save", testHandler.SaveTestResult)
+			authorized.GET("/test/history", testHandler.GetTestHistory)
+			authorized.GET("/test/report", testHandler.GetTestReport)
+			authorized.GET("/test/export/:roleId", testHandler.ExportTestReport)
+			authorized.POST("/test/rate", testHandler.RateTestResponse)
+
+			// 提示词优化（适配标准库 handler 到 Gin）
+			promptOptimizer := promptSvc.NewOptimizer()
+			promptHandler := handler.NewPromptHandler(promptOptimizer)
+			authorized.POST("/prompt/optimize", func(c *gin.Context) {
+				promptHandler.Optimize(c.Writer, c.Request)
+			})
+			authorized.POST("/prompt/suggestions", func(c *gin.Context) {
+				promptHandler.GetSuggestions(c.Writer, c.Request)
+			})
+			authorized.POST("/prompt/log", func(c *gin.Context) {
+				promptHandler.LogSelection(c.Writer, c.Request)
+			})
+
+			// 角色创建向导
+			wizardHandler := handler.NewWizardHandler()
+			authorized.GET("/wizard/options", wizardHandler.GetOptions)
+			authorized.POST("/wizard/generate", wizardHandler.GeneratePrompt)
+			authorized.POST("/wizard/recommendations", wizardHandler.GetRecommendations)
+			authorized.POST("/wizard/test", wizardHandler.RunTest)
+			authorized.POST("/wizard/export", wizardHandler.ExportConfig)
+			authorized.POST("/wizard/validate", wizardHandler.ValidateData)
+			authorized.GET("/wizard/templates", wizardHandler.GetTemplates)
+
+			// 数据分析
+			analyticsHandler := handler.NewAnalyticsHandler(db, cfg)
+			authorized.GET("/analytics/dashboard", analyticsHandler.GetDashboardMetrics)
+			authorized.GET("/analytics/user-activity", analyticsHandler.GetUserActivity)
+			authorized.GET("/analytics/feature-usage", analyticsHandler.GetFeatureUsage)
+			authorized.GET("/analytics/retention", analyticsHandler.GetRetentionRate)
+			authorized.GET("/analytics/churn-risk", analyticsHandler.GetChurnRiskUsers)
+			authorized.GET("/analytics/conversation-quality", analyticsHandler.GetConversationQuality)
+			authorized.GET("/analytics/reply-quality", analyticsHandler.GetReplyQuality)
+			authorized.GET("/analytics/faq", analyticsHandler.GetFAQStats)
+			authorized.GET("/analytics/sensitive-words", analyticsHandler.GetSensitiveWords)
+			authorized.GET("/analytics/cost", analyticsHandler.GetCostStats)
+			authorized.GET("/analytics/cost/by-role", analyticsHandler.GetCostByRole)
+			authorized.GET("/analytics/cost/by-user", analyticsHandler.GetCostByUser)
+			authorized.GET("/analytics/cost/trend", analyticsHandler.GetCostTrend)
+			authorized.GET("/analytics/cost/prediction", analyticsHandler.GetCostPrediction)
+			authorized.GET("/analytics/report", analyticsHandler.GenerateReport)
+			authorized.GET("/analytics/report/export", analyticsHandler.ExportReport)
 		}
 	}
 

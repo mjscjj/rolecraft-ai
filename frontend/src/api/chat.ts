@@ -149,6 +149,124 @@ export const chatApi = {
       throw handleApiError(error);
     }
   },
+
+  // 更新会话标题
+  updateTitle: async (sessionId: string, title: string): Promise<{
+    sessionId: string;
+    title: string;
+  }> => {
+    try {
+      const response = await client.put<ApiResponse<{
+        sessionId: string;
+        title: string;
+      }>>(`/chat-sessions/${sessionId}/title`, { title });
+      return response.data.data;
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
+
+  // 归档/取消归档会话
+  archive: async (sessionId: string, isArchived: boolean): Promise<{
+    sessionId: string;
+    isArchived: boolean;
+  }> => {
+    try {
+      const response = await client.post<ApiResponse<{
+        sessionId: string;
+        isArchived: boolean;
+      }>>(`/chat-sessions/${sessionId}/archive`, { isArchived });
+      return response.data.data;
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
+
+  // 导出会话
+  export: async (sessionId: string, format: 'markdown' | 'json' | 'pdf'): Promise<Blob> => {
+    const token = localStorage.getItem('token');
+    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+    
+    const response = await fetch(`${API_BASE_URL}/api/v1/chat-sessions/${sessionId}/export`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ format }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    return await response.blob();
+  },
+
+  // 搜索会话
+  search: async (query: string): Promise<ChatSession[]> => {
+    try {
+      const response = await client.post<ApiResponse<ChatSession[]>>('/chat-sessions/search', { query });
+      return response.data.data;
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
+
+  // 编辑消息
+  editMessage: async (sessionId: string, messageId: string, content: string): Promise<{
+    messageId: string;
+    content: string;
+  }> => {
+    try {
+      const response = await client.put<ApiResponse<{
+        messageId: string;
+        content: string;
+      }>>(`/chat/${sessionId}/messages/${messageId}`, { content });
+      return response.data.data;
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
+
+  // 重新生成回复
+  regenerate: async (sessionId: string, messageId: string): Promise<{
+    assistantMessage: Message;
+  }> => {
+    try {
+      const response = await client.post<ApiResponse<{
+        assistantMessage: Message;
+      }>>(`/chat/${sessionId}/messages/${messageId}/regenerate`);
+      return response.data.data;
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
+
+  // 点赞/点踩
+  rateMessage: async (messageId: string, rating: 'up' | 'down'): Promise<{
+    messageId: string;
+    rating: string;
+  }> => {
+    try {
+      const response = await client.post<ApiResponse<{
+        messageId: string;
+        rating: string;
+      }>>(`/chat/messages/${messageId}/rate`, { rating });
+      return response.data.data;
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
+
+  // 删除会话
+  deleteSession: async (sessionId: string): Promise<void> => {
+    try {
+      await client.delete(`/chat-sessions/${sessionId}`);
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
 };
 
 export default chatApi;

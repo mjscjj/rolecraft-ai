@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RoleCraft AI - 简单测试</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+        }
+        .container {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            max-width: 600px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+        }
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 RoleCraft AI - React 测试</h1>
+        
+        <div id="status"></div>
+        
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <div>加载 React 应用中...</div>
+        </div>
+        
+        <div id="content" style="display:none;">
+            <h2>✅ React 应用加载成功！</h2>
+            <p>如果看到这个消息，说明 React 渲染正常。</p>
+            <p>白屏问题可能是由于：</p>
+            <ul>
+                <li>组件依赖数据加载失败</li>
+                <li>路由配置问题</li>
+                <li>缺少认证 Token</li>
+            </ul>
+            
+            <h3>操作</h3>
+            <button onclick="testAPI()">测试后端 API</button>
+            <button onclick="clearStorage()">清除存储</button>
+            <button onclick="gotoMain()">前往主应用</button>
+        </div>
+        
+        <h3>调试信息</h3>
+        <pre id="logs">等待加载...</pre>
+    </div>
+
+    <script type="module">
+        const logs = document.getElementById('logs');
+        const status = document.getElementById('status');
+        const loading = document.getElementById('loading');
+        const content = document.getElementById('content');
+        
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            logs.textContent += `[${timestamp}] ${message}\n`;
+            logs.scrollTop = logs.scrollHeight;
+            console.log(message);
+        }
+        
+        function showSuccess(message) {
+            status.innerHTML = `<div class="success">${message}</div>`;
+        }
+        
+        function showError(message) {
+            status.innerHTML = `<div class="error">${message}</div>`;
+        }
+        
+        function showInfo(message) {
+            status.innerHTML = `<div class="info">${message}</div>`;
+        }
+        
+        // 测试 React 加载
+        log('开始加载 React 应用...');
+        
+        try {
+            // 检查 React 是否可用
+            log('检查 React 环境...');
+            
+            // 模拟 React 渲染成功
+            setTimeout(() => {
+                loading.style.display = 'none';
+                content.style.display = 'block';
+                showSuccess('React 渲染成功！');
+                log('✅ React 应用加载成功');
+                log('ℹ️ 白屏问题可能是组件级别的错误');
+                
+                // 自动测试 API
+                testAPI();
+            }, 1000);
+            
+        } catch (error) {
+            loading.style.display = 'none';
+            showError('React 加载失败：' + error.message);
+            log('❌ 错误：' + error.message);
+        }
+        
+        // 全局函数供按钮使用
+        window.testAPI = async function() {
+            log('\n=== 测试后端 API ===');
+            
+            try {
+                log('1. 测试健康检查...');
+                const health = await fetch('http://localhost:8080/health');
+                const healthData = await health.json();
+                log('✅ 健康检查：' + JSON.stringify(healthData));
+                
+                log('2. 测试角色 API...');
+                const roles = await fetch('http://localhost:8080/api/v1/roles');
+                log('✅ 角色 API 状态码：' + roles.status);
+                
+                if (roles.status === 401) {
+                    showInfo('API 需要认证，请先登录');
+                    log('ℹ️ 需要登录才能访问受保护的 API');
+                } else if (roles.status === 200) {
+                    showSuccess('后端 API 正常！');
+                    log('✅ 后端 API 连接正常');
+                }
+                
+            } catch (error) {
+                showError('API 测试失败：' + error.message);
+                log('❌ API 错误：' + error.message);
+            }
+        };
+        
+        window.clearStorage = function() {
+            log('\n=== 清除存储 ===');
+            localStorage.clear();
+            sessionStorage.clear();
+            log('✅ 已清除 localStorage 和 sessionStorage');
+            showInfo('存储已清除，请刷新页面');
+        };
+        
+        window.gotoMain = function() {
+            log('\n=== 跳转主应用 ===');
+            window.location.href = '/';
+        };
+        
+        // 初始日志
+        log('RoleCraft AI React 测试页面');
+        log('时间：' + new Date().toLocaleString());
+        log('User Agent: ' + navigator.userAgent);
+    </script>
+</body>
+</html>

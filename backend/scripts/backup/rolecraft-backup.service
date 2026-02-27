@@ -1,0 +1,36 @@
+[Unit]
+Description=RoleCraft AI Database Backup Service
+After=network.target
+Documentation=https://github.com/rolecraft-ai/rolecraft-ai
+
+[Service]
+Type=oneshot
+User=rolecraft
+Group=rolecraft
+
+# 工作目录
+WorkingDirectory=/opt/rolecraft-ai/backend/scripts/backup
+
+# 环境变量
+Environment=BACKUP_DIR=/opt/rolecraft-ai/backups
+Environment=DB_PATH=/opt/rolecraft-ai/backend/rolecraft.db
+Environment=DB_TYPE=sqlite
+Environment=RETENTION_DAYS=30
+Environment=COMPRESSION=true
+
+# 执行备份脚本
+ExecStart=/opt/rolecraft-ai/backend/scripts/backup/backup.sh backup
+
+# 日志
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rolecraft-backup
+
+# 安全设置
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/rolecraft-ai/backups
+
+[Install]
+WantedBy=multi-user.target

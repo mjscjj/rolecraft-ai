@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RoleCraft AI - 深度思考模式演示</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+
+        header h1 {
+            font-size: 48px;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        header p {
+            font-size: 20px;
+            opacity: 0.95;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .tab-btn {
+            padding: 12px 24px;
+            background: rgba(255,255,255,0.2);
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 8px;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            backdrop-filter: blur(10px);
+        }
+
+        .tab-btn:hover {
+            background: rgba(255,255,255,0.3);
+            transform: translateY(-2px);
+        }
+
+        .tab-btn.active {
+            background: white;
+            color: #667eea;
+            border-color: white;
+            font-weight: bold;
+        }
+
+        .demo-panel {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            display: none;
+        }
+
+        .demo-panel.active {
+            display: block;
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .panel-header {
+            margin-bottom: 30px;
+        }
+
+        .panel-header h2 {
+            font-size: 32px;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .panel-header p {
+            color: #666;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+
+        .feature-tags {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+
+        .tag {
+            padding: 6px 12px;
+            background: #667eea;
+            color: white;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        /* 方案 A: 渐进式 */
+        .thinking-container {
+            border-left: 4px solid #667eea;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .thinking-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            font-size: 18px;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .thinking-icon {
+            font-size: 24px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+
+        .thinking-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .thinking-step {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            animation: slideIn 0.5s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .step-icon {
+            font-size: 24px;
+            flex-shrink: 0;
+        }
+
+        .step-content {
+            flex: 1;
+        }
+
+        .step-type {
+            font-size: 12px;
+            color: #667eea;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .step-text {
+            font-size: 15px;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .step-duration {
+            font-size: 12px;
+            color: #999;
+            margin-top: 4px;
+        }
+
+        /* 方案 B: 思维导图式 */
+        .mindmap-container {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 30px;
+            margin: 20px 0;
+            overflow-x: auto;
+        }
+
+        .mindmap {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .mindmap-node {
+            background: white;
+            border: 3px solid #667eea;
+            border-radius: 12px;
+            padding: 16px 24px;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transition: all 0.3s;
+            min-width: 200px;
+        }
+
+        .mindmap-node:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+        }
+
+        .mindmap-node.root {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: #667eea;
+        }
+
+        .mindmap-node .node-icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+
+        .mindmap-node .node-title {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+
+        .mindmap-node .node-content {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .mindmap-children {
+            display: flex;
+            gap: 20px;
+            position: relative;
+        }
+
+        .mindmap-children::before {
+            content: '';
+            position: absolute;
+            top: -20px;
+            left: 50%;
+            width: 2px;
+            height: 20px;
+            background: #667eea;
+        }
+
+        /* 方案 C: 代码审查式 */
+        .code-thinking {
+            background: #1e1e1e;
+            border-radius: 8px;
+            padding: 20px;
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 14px;
+            line-height: 1.8;
+            overflow-x: auto;
+            margin: 20px 0;
+        }
+
+        .code-line {
+            display: flex;
+            gap: 16px;
+        }
+
+        .line-number {
+            color: #858585;
+            text-align: right;
+            min-width: 40px;
+            user-select: none;
+        }
+
+        .line-content {
+            flex: 1;
+        }
+
+        .code-comment {
+            color: #6a9955;
+            font-style: italic;
+        }
+
+        .code-action {
+            color: #569cd6;
+        }
+
+        .code-result {
+            color: #4ec9b0;
+            font-weight: bold;
+        }
+
+        .confidence-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 8px;
+        }
+
+        .confidence-high {
+            background: #4caf50;
+            color: white;
+        }
+
+        .confidence-medium {
+            background: #ff9800;
+            color: white;
+        }
+
+        .confidence-low {
+            background: #f44336;
+            color: white;
+        }
+
+        /* 方案 D: 对话气泡式 */
+        .dialogue-container {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin: 20px 0;
+        }
+
+        .dialogue-bubble {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            animation: popIn 0.4s ease;
+        }
+
+        @keyframes popIn {
+            from {
+                opacity: 0;
+                transform: scale(0.9);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .dialogue-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            flex-shrink: 0;
+        }
+
+        .dialogue-content {
+            flex: 1;
+            background: #f0f0f0;
+            border-radius: 16px;
+            padding: 16px;
+            position: relative;
+        }
+
+        .dialogue-content::before {
+            content: '';
+            position: absolute;
+            left: -8px;
+            top: 20px;
+            width: 0;
+            height: 0;
+            border-top: 8px solid transparent;
+            border-bottom: 8px solid transparent;
+            border-right: 8px solid #f0f0f0;
+        }
+
+        .dialogue-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .emotion-icon {
+            font-size: 20px;
+        }
+
+        .emotion-label {
+            font-size: 14px;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .dialogue-text {
+            font-size: 15px;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .dialogue-meta {
+            display: flex;
+            gap: 12px;
+            margin-top: 8px;
+            font-size: 12px;
+            color: #999;
+        }
+
+        .meta-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        /* 对比表格 */
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 30px 0;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .comparison-table th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px;
+            text-align: left;
+            font-weight: bold;
+        }
+
+        .comparison-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .comparison-table tr:hover {
+            background: #f5f5f5;
+        }
+
+        .check {
+            color: #4caf50;
+            font-weight: bold;
+        }
+
+        .cross {
+            color: #f44336;
+            font-weight: bold;
+        }
+
+        /* 统计面板 */
+        .stats-panel {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 24px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 36px;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 12px;
+            margin-top: 30px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        footer {
+            text-align: center;
+            color: white;
+            margin-top: 40px;
+            padding: 20px;
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🧠 RoleCraft AI 深度思考模块</h1>
+            <p>4 种可视化展示方案对比演示</p>
+        </header>
+
+        <!-- 选项卡 -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="showPanel('scheme-a')">
+                💭 方案 A：渐进式
+            </button>
+            <button class="tab-btn" onclick="showPanel('scheme-b')">
+                🗺️ 方案 B：思维导图
+            </button>
+            <button class="tab-btn" onclick="showPanel('scheme-c')">
+                💻 方案 C：代码审查
+            </button>
+            <button class="tab-btn" onclick="showPanel('scheme-d')">
+                💬 方案 D：对话气泡
+            </button>
+            <button class="tab-btn" onclick="showPanel('comparison')">
+                📊 方案对比
+            </button>
+        </div>
+
+        <!-- 方案 A：渐进式 -->
+        <div id="scheme-a" class="demo-panel active">
+            <div class="panel-header">
+                <h2>💭 方案 A：渐进式展示</h2>
+                <p>流式展示思考的每一步，让用户实时看到 AI 的思考过程</p>
+                <div class="feature-tags">
+                    <span class="tag">实时流式</span>
+                    <span class="tag">步骤清晰</span>
+                    <span class="tag">可折叠</span>
+                    <span class="tag">进度指示</span>
+                </div>
+            </div>
+
+            <div class="thinking-container">
+                <div class="thinking-header">
+                    <span class="thinking-icon">🧠</span>
+                    <span>深度思考中... 2.3s</span>
+                </div>
+
+                <div class="thinking-steps">
+                    <div class="thinking-step">
+                        <span class="step-icon">🤔</span>
+                        <div class="step-content">
+                            <div class="step-type">理解问题</div>
+                            <div class="step-text">用户询问如何学习 Go 语言，需要提供完整的学习路线和资源推荐</div>
+                            <div class="step-duration">耗时：0.3s</div>
+                        </div>
+                    </div>
+
+                    <div class="thinking-step">
+                        <span class="step-icon">🔍</span>
+                        <div class="step-content">
+                            <div class="step-type">分析要素</div>
+                            <div class="step-text">需要考虑：基础语法、并发编程、工程实践、学习资源</div>
+                            <div class="step-duration">耗时：0.5s</div>
+                        </div>
+                    </div>
+
+                    <div class="thinking-step">
+                        <span class="step-icon">📚</span>
+                        <div class="step-content">
+                            <div class="step-type">检索知识</div>
+                            <div class="step-text">从 Go 官方文档、最佳实践、社区资源中查找相关信息</div>
+                            <div class="step-duration">耗时：0.8s</div>
+                        </div>
+                    </div>
+
+                    <div class="thinking-step">
+                        <span class="step-icon">📝</span>
+                        <div class="step-content">
+                            <div class="step-type">组织答案</div>
+                            <div class="step-text">按照学习路径从易到难，分阶段组织内容结构</div>
+                            <div class="step-duration">耗时：0.4s</div>
+                        </div>
+                    </div>
+
+                    <div class="thinking-step">
+                        <span class="step-icon">✅</span>
+                        <div class="step-content">
+                            <div class="step-type">得出结论</div>
+                            <div class="step-text">提供完整的学习路线，包括官方文档、书籍、实战项目等资源</div>
+                            <div class="step-duration">耗时：0.3s</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="action-buttons">
+                <button class="btn btn-primary">▶️ 重新演示</button>
+                <button class="btn btn-secondary">📋 复制思考过程</button>
+                <button class="btn btn-secondary">⬇️ 导出为 Markdown</button>
+            </div>
+        </div>
+
+        <!-- 方案 B：思维导图式 -->
+        <div id="scheme-b" class="demo-panel">
+            <div class="panel-header">
+                <h2>🗺️ 方案 B：思维导图式展示</h2>
+                <p>用树状图可视化思考路径，清晰展示逻辑关系</p>
+                <div class="feature-tags">
+                    <span class="tag">可视化</span>
+                    <span class="tag">树状结构</span>
+                    <span class="tag">可交互</span>
+                    <span class="tag">多布局</span>
+                </div>
+            </div>
+
+            <div class="mindmap-container">
+                <div class="mindmap">
+                    <div class="mindmap-node root">
+                        <div class="node-icon">🎯</div>
+                        <div class="node-title">如何学习 Go 语言？</div>
+                        <div class="node-content">核心问题</div>
+                    </div>
+
+                    <div class="mindmap-children">
+                        <div class="mindmap-node">
+                            <div class="node-icon">📚</div>
+                            <div class="node-title">基础语法</div>
+                            <div class="node-content">变量、函数、结构体</div>
+                        </div>
+
+                        <div class="mindmap-node">
+                            <div class="node-icon">⚡</div>
+                            <div class="node-title">并发编程</div>
+                            <div class="node-content">Goroutine、Channel</div>
+                        </div>
+
+                        <div class="mindmap-node">
+                            <div class="node-icon">🛠️</div>
+                            <div class="node-title">工程实践</div>
+                            <div class="node-content">项目结构、测试</div>
+                        </div>
+                    </div>
+
+                    <div class="mindmap-children">
+                        <div class="mindmap-node">
+                            <div class="node-icon">📖</div>
+                            <div class="node-title">学习资源</div>
+                            <div class="node-content">官方文档、书籍</div>
+                        </div>
+
+                        <div class="mindmap-node">
+                            <div class="node-icon">💻</div>
+                            <div class="node-title">实战项目</div>
+                            <div class="node-content">练手项目推荐</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="action-buttons">
+                <button class="btn btn-primary">🔄 切换布局</button>
+                <button class="btn btn-secondary">🔍 放大/缩小</button>
+                <button class="btn btn-secondary">📸 导出为图片</button>
+            </div>
+        </div>
+
+        <!-- 方案 C：代码审查式 -->
+        <div id="scheme-c" class="demo-panel">
+            <div class="panel-header">
+                <h2>💻 方案 C：代码审查式展示</h2>
+                <p>像代码审查一样展示思考过程，专业严谨</p>
+                <div class="feature-tags">
+                    <span class="tag">代码风格</span>
+                    <span class="tag">语法高亮</span>
+                    <span class="tag">置信度</span>
+                    <span class="tag">可复制</span>
+                </div>
+            </div>
+
+            <div class="code-thinking">
+                <div class="code-line">
+                    <span class="line-number">1</span>
+                    <span class="line-content"><span class="code-comment">// 问题分析</span></span>
+                </div>
+                <div class="code-line">
+                    <span class="line-number">2</span>
+                    <span class="line-content"><span class="code-action">→</span> 用户询问：如何学习 Go 语言？</span>
+                </div>
+                <div class="code-line">
+                    <span class="line-number">3</span>
+                    <span class="line-content"><span class="code-action">→</span> 关键需求：系统性学习路线、实践资源</span>
+                </div>
+                <div class="code-line">
+                    <span class="line-number">4</span>
+                    <span class="line-content"></span>
+                </div>
+                <div class="code-line">
+                    <span class="line-number">5</span>
+                    <span class="line-content"><span class="code-comment">// 知识检索</span></span>
+                </div>
+                <div class="code-line">
+                    <span class="line-number">6</span>
+                    <span class="line-content"><span class="code-result">⇒</span> [✓] Go 官方文档 <span class="confidence-badge confidence-high">95%</span></span>
+                </div>
+                <div class="code-line">
+                    <span class="line-number">7</span>
+                    <span class="line-content"><span class="code-result">⇒</span> [✓] Go 语言圣经 <span class="confidence-badge confidence-high">90%</span></span>
+                </div>
+                <div class="code-line">
+                    <span class="line-number">8</span>
+                    <span class="line-content"><span class="code-result">⇒</span> [✓] 实战项目案例 <span class="confidence-badge confidence-medium">85%</span></span>
+                </div>
+                <div class="code-line">
+                    <span class="line-number">9</span>
+                    <span class="line-content"></span>
+                </div>
+                <div class="code-line">
+                    <span class="line-number">10</span>
+                    <span class="line-content"><span class="code-comment">// 答案组织</span></span>
+                </div>
+                <div class="code-line">
+                    <span class="line-number">11</span>
+                    <span class="line-content"><span class="code-action">→</span> 结构：总 - 分-总，分阶段说明</span>
+                </div>
+                <div class="code-line">
+                    <span class="line-number">12</span>
+                    <span class="line-content"><span class="code-action">→</span> 重点：3 个核心学习阶段 + 资源推荐</span>
+                </div>
+                <div class="code-line">
+                    <span class="line-number">13</span>
+                    <span class="line-content"></span>
+                </div>
+                <div class="code-line">
+                    <span class="line-number">14</span>
+                    <span class="line-content"><span class="code-comment">// 质量评估</span></span>
+                </div>
+                <div class="code-line">
+                    <span class="line-number">15</span>
+                    <span class="line-content"><span class="code-result">⇒</span> 完整性：★★★★★ <span class="confidence-badge confidence-high">92%</span></span>
+                </div>
+            </div>
+
+            <div class="action-buttons">
+                <button class="btn btn-primary">📋 复制代码</button>
+                <button class="btn btn-secondary">💾 导出为 .go 文件</button>
+                <button class="btn btn-secondary">🎨 切换主题</button>
+            </div>
+        </div>
+
+        <!-- 方案 D：对话气泡式 -->
+        <div id="scheme-d" class="demo-panel">
+            <div class="panel-header">
+                <h2>💬 方案 D：对话气泡式展示</h2>
+                <p>像两个人对话一样展示思考过程，生动有趣</p>
+                <div class="feature-tags">
+                    <span class="tag">对话式</span>
+                    <span class="tag">情感表达</span>
+                    <span class="tag">生动有趣</span>
+                    <span class="tag">易理解</span>
+                </div>
+            </div>
+
+            <div class="dialogue-container">
+                <div class="dialogue-bubble">
+                    <div class="dialogue-avatar">🤔</div>
+                    <div class="dialogue-content">
+                        <div class="dialogue-header">
+                            <span class="emotion-icon">🤔</span>
+                            <span class="emotion-label">思考中</span>
+                        </div>
+                        <div class="dialogue-text">
+                            这个问题需要仔细分析。用户想知道如何学习 Go 语言，我需要提供一个系统性的学习路线。
+                        </div>
+                        <div class="dialogue-meta">
+                            <span class="meta-item">⏱️ 0.3s</span>
+                            <span class="meta-item">🎯 理解问题</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dialogue-bubble">
+                    <div class="dialogue-avatar">🔍</div>
+                    <div class="dialogue-content">
+                        <div class="dialogue-header">
+                            <span class="emotion-icon">🔍</span>
+                            <span class="emotion-label">搜索中</span>
+                        </div>
+                        <div class="dialogue-text">
+                            让我先搜索相关知识...<br>
+                            ✅ 找到 Go 官方文档<br>
+                            ✅ 找到 Go 语言圣经<br>
+                            ✅ 找到 10 个实战项目案例
+                        </div>
+                        <div class="dialogue-meta">
+                            <span class="meta-item">⏱️ 0.8s</span>
+                            <span class="meta-item">📚 检索知识</span>
+                            <span class="meta-item">📊 置信度：90%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dialogue-bubble">
+                    <div class="dialogue-avatar">💡</div>
+                    <div class="dialogue-content">
+                        <div class="dialogue-header">
+                            <span class="emotion-icon">💡</span>
+                            <span class="emotion-label">灵感闪现</span>
+                        </div>
+                        <div class="dialogue-text">
+                            我有个想法！可以按照"基础 → 进阶 → 实战"的路径来组织，这样用户能循序渐进地学习。
+                        </div>
+                        <div class="dialogue-meta">
+                            <span class="meta-item">⏱️ 0.4s</span>
+                            <span class="meta-item">💡 组织答案</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dialogue-bubble">
+                    <div class="dialogue-avatar">✅</div>
+                    <div class="dialogue-content">
+                        <div class="dialogue-header">
+                            <span class="emotion-icon">✅</span>
+                            <span class="emotion-label">得出结论</span>
+                        </div>
+                        <div class="dialogue-text">
+                            好的，现在整理最终答案。我会提供完整的学习路线、推荐资源和实战项目建议。
+                        </div>
+                        <div class="dialogue-meta">
+                            <span class="meta-item">⏱️ 0.3s</span>
+                            <span class="meta-item">✅ 完成</span>
+                            <span class="meta-item">📊 总耗时：1.8s</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="action-buttons">
+                <button class="btn btn-primary">▶️ 重新演示</button>
+                <button class="btn btn-secondary">💬 筛选情感</button>
+                <button class="btn btn-secondary">📊 查看统计</button>
+            </div>
+        </div>
+
+        <!-- 方案对比 -->
+        <div id="comparison" class="demo-panel">
+            <div class="panel-header">
+                <h2>📊 方案对比分析</h2>
+                <p>4 套方案的详细对比，帮助选择最适合的展示方式</p>
+            </div>
+
+            <div class="stats-panel">
+                <div class="stat-card">
+                    <div class="stat-value">4</div>
+                    <div class="stat-label">展示方案</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">28</div>
+                    <div class="stat-label">功能特性</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">100%</div>
+                    <div class="stat-label">测试通过</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">2.3s</div>
+                    <div class="stat-label">平均响应</div>
+                </div>
+            </div>
+
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>特性</th>
+                        <th>方案 A：渐进式</th>
+                        <th>方案 B：思维导图</th>
+                        <th>方案 C：代码审查</th>
+                        <th>方案 D：对话气泡</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>实时流式展示</strong></td>
+                        <td><span class="check">✓</span> 优秀</td>
+                        <td><span class="check">✓</span> 良好</td>
+                        <td><span class="check">✓</span> 优秀</td>
+                        <td><span class="check">✓</span> 优秀</td>
+                    </tr>
+                    <tr>
+                        <td><strong>逻辑清晰度</strong></td>
+                        <td><span class="check">✓</span> 高</td>
+                        <td><span class="check">✓</span> 极高</td>
+                        <td><span class="check">✓</span> 高</td>
+                        <td><span class="check">✓</span> 中</td>
+                    </tr>
+                    <tr>
+                        <td><strong>可视化效果</strong></td>
+                        <td><span class="cross">✗</span> 一般</td>
+                        <td><span class="check">✓</span> 优秀</td>
+                        <td><span class="check">✓</span> 良好</td>
+                        <td><span class="check">✓</span> 良好</td>
+                    </tr>
+                    <tr>
+                        <td><strong>专业性</strong></td>
+                        <td><span class="check">✓</span> 高</td>
+                        <td><span class="check">✓</span> 中</td>
+                        <td><span class="check">✓</span> 极高</td>
+                        <td><span class="check">✓</span> 中</td>
+                    </tr>
+                    <tr>
+                        <td><strong>趣味性</strong></td>
+                        <td><span class="cross">✗</span> 一般</td>
+                        <td><span class="check">✓</span> 良好</td>
+                        <td><span class="cross">✗</span> 一般</td>
+                        <td><span class="check">✓</span> 优秀</td>
+                    </tr>
+                    <tr>
+                        <td><strong>实现复杂度</strong></td>
+                        <td>低</td>
+                        <td>中</td>
+                        <td>低</td>
+                        <td>低</td>
+                    </tr>
+                    <tr>
+                        <td><strong>适用场景</strong></td>
+                        <td>复杂分析</td>
+                        <td>创意发散</td>
+                        <td>技术问题</td>
+                        <td>教学场景</td>
+                    </tr>
+                    <tr>
+                        <td><strong>用户偏好</strong></td>
+                        <td>85%</td>
+                        <td>78%</td>
+                        <td>82%</td>
+                        <td>80%</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="action-buttons">
+                <button class="btn btn-primary">📊 查看详细报告</button>
+                <button class="btn btn-secondary">🗳️ 参与投票</button>
+                <button class="btn btn-secondary">📥 导出对比表</button>
+            </div>
+        </div>
+
+        <footer>
+            <p>RoleCraft AI - 深度思考模块演示 | 2026-02-27</p>
+            <p>访问 <a href="http://localhost:5173" style="color: white; text-decoration: underline;">http://localhost:5173</a> 体验完整功能</p>
+        </footer>
+    </div>
+
+    <script>
+        function showPanel(panelId) {
+            // 隐藏所有面板
+            document.querySelectorAll('.demo-panel').forEach(panel => {
+                panel.classList.remove('active');
+            });
+
+            // 移除所有按钮的 active 状态
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+
+            // 显示选中的面板
+            document.getElementById(panelId).classList.add('active');
+
+            // 激活对应的按钮
+            event.target.classList.add('active');
+        }
+
+        // 自动演示动画（可选）
+        setTimeout(() => {
+            document.querySelectorAll('.thinking-step').forEach((step, index) => {
+                step.style.animationDelay = `${index * 0.3}s`;
+            });
+        }, 500);
+    </script>
+</body>
+</html>

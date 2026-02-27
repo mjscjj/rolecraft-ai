@@ -507,3 +507,28 @@ func (c *Client) CreateWorkspaceBySlug(slug, name, systemPrompt string) (*Worksp
 	
 	return result.Workspace, nil
 }
+
+// ListWorkspaces lists all workspaces (for health check)
+func (c *Client) ListWorkspaces(ctx context.Context) ([]Workspace, error) {
+	resp, err := c.doRequest(ctx, http.MethodGet, "/workspaces", nil, "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	
+	var result struct {
+		Workspaces []Workspace `json:"workspaces"`
+		Message    string      `json:"message,omitempty"`
+		Error      string      `json:"error,omitempty"`
+	}
+	
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	
+	if result.Error != "" {
+		return nil, fmt.Errorf("api error: %s", result.Error)
+	}
+	
+	return result.Workspaces, nil
+}
