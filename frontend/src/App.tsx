@@ -1,9 +1,14 @@
 import { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { Layout } from './components/Layout';
+import { ErrorBoundary, AsyncBoundary } from './components/ErrorBoundary';
+import { withAsyncErrorBoundary } from './components/ErrorBoundary';
 
 const Dashboard = lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })));
 const Login = lazy(() => import('./pages/Login').then((m) => ({ default: m.Login })));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword').then((m) => ({ default: m.ForgotPassword })));
+const VerifyEmail = lazy(() => import('./pages/VerifyEmail').then((m) => ({ default: m.VerifyEmail })));
+const NotFound = lazy(() => import('./pages/NotFound').then((m) => ({ default: m.NotFound })));
 const ChatWebUI = lazy(() => import('./pages/ChatWebUI'));
 const Chat = lazy(() => import('./pages/Chat').then((m) => ({ default: m.Chat })));
 const RoleEditor = lazy(() => import('./pages/RoleEditor').then((m) => ({ default: m.RoleEditor })));
@@ -37,10 +42,15 @@ const ProtectedOnly = () => {
 
 const App = () => {
   return (
-    <BrowserRouter>
-      <Suspense fallback={<AppLoading />}>
-        <Routes>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <Suspense fallback={<AppLoading />}>
+          <AsyncBoundary>
+            <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/verify-email" element={<VerifyEmail />} />
+          <Route path="/404" element={<NotFound />} />
           <Route element={<ProtectedLayout />}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/roles" element={<RoleMarket />} />
@@ -54,10 +64,12 @@ const App = () => {
             <Route path="/chat/:roleId" element={<ChatWebUI />} />
             <Route path="/chat-legacy/:roleId" element={<Chat />} />
           </Route>
-          <Route path="*" element={<Navigate to="/" />} />
-        </Routes>
-      </Suspense>
-    </BrowserRouter>
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </AsyncBoundary>
+        </Suspense>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 };
 
