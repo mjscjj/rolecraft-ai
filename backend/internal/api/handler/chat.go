@@ -233,40 +233,67 @@ func (h *ChatHandler) callAnythingLLM(slug, message, apiKey string) (string, err
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
 	if apiKey == "" {
 		apiKey = h.config.AnythingLLMKey
 	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(req)
+	doChat := func(key string) (string, int, string, error) {
+		req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+		if err != nil {
+			return "", 0, "", fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+key)
+
+		client := &http.Client{Timeout: 60 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			return "", 0, "", fmt.Errorf("failed to send request: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return "", resp.StatusCode, string(body), nil
+		}
+
+		var chatResp AnythingLLMChatResponse
+		if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
+			return "", 0, "", fmt.Errorf("failed to decode response: %w", err)
+		}
+		if chatResp.Error != "" {
+			return "", http.StatusOK, chatResp.Error, nil
+		}
+		if chatResp.TextResponse != "" {
+			return chatResp.TextResponse, http.StatusOK, "", nil
+		}
+		return chatResp.Response, http.StatusOK, "", nil
+	}
+
+	content, status, msg, err := doChat(apiKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to send request: %w", err)
+		return "", err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("anythingllm API error: %s (status: %d)", string(body), resp.StatusCode)
+	if status == http.StatusOK && msg == "" {
+		return content, nil
 	}
 
-	var chatResp AnythingLLMChatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
+	// If a per-session key is invalid/expired, fallback to system key once.
+	if apiKey != h.config.AnythingLLMKey && h.config.AnythingLLMKey != "" {
+		content, status, msg, err = doChat(h.config.AnythingLLMKey)
+		if err != nil {
+			return "", err
+		}
+		if status == http.StatusOK && msg == "" {
+			return content, nil
+		}
 	}
-	if chatResp.Error != "" {
-		return "", fmt.Errorf("anythingllm chat error: %s", chatResp.Error)
+
+	if status != http.StatusOK {
+		return "", fmt.Errorf("anythingllm API error: %s (status: %d)", msg, status)
 	}
-	if chatResp.TextResponse != "" {
-		return chatResp.TextResponse, nil
-	}
-	return chatResp.Response, nil
+	return "", fmt.Errorf("anythingllm chat error: %s", msg)
 }
 
 func (h *ChatHandler) parseSessionModelConfig(session models.ChatSession) map[string]interface{} {
@@ -871,6 +898,240 @@ type ArchiveSessionRequest struct {
 
 // ArchiveSession 归档/取消归档会话
 func (h *ChatHandler) ArchiveSession(c *gin.Context) {
+	sessionId := c.Param("id")
+	userId := c.GetInt("userId")
+
+	var req ArchiveSessionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "请求参数错误"})
+		return
+	}
+
+	// 更新会话归档状态
+	config := make(map[string]interface{})
+	if err := json.Unmarshal(session.Config, &config); err != nil {
+		config = make(map[string]interface{})
+	}
+	config["isArchived"] = req.IsArchived
+	configJSON, _ := json.Marshal(config)
+
+	if err := h.db.Model(&models.ChatSession{}).
+		Where("id = ? AND user_id = ?", sessionId, userId).
+		Update("config", configJSON).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "归档失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "归档成功"})
+}
+
+// UpdateMessageRequest 更新消息请求
+type UpdateMessageRequest struct {
+	Content string `json:"content" binding:"required"`
+}
+
+// UpdateMessage 编辑消息
+func (h *ChatHandler) UpdateMessage(c *gin.Context) {
+	messageId := c.Param("id")
+	userId := c.GetInt("userId")
+
+	var req UpdateMessageRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "请求参数错误"})
+		return
+	}
+
+	// 验证消息所有权
+	var msg models.Message
+	if err := h.db.Where("id = ?", messageId).First(&msg).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "message": "消息不存在"})
+		return
+	}
+
+	var session models.ChatSession
+	if err := h.db.Where("id = ? AND user_id = ?", msg.SessionID, userId).First(&session).Error; err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "message": "无权操作此消息"})
+		return
+	}
+
+	// 只能编辑用户消息
+	if msg.Role != "user" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "只能编辑用户消息"})
+		return
+	}
+
+	// 更新消息
+	if err := h.db.Model(&msg).Updates(map[string]interface{}{
+		"content":    req.Content,
+		"is_edited":  true,
+		"updated_at": time.Now(),
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "更新失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "更新成功", "data": msg})
+}
+
+// FeedbackRequest 反馈请求
+type FeedbackRequest struct {
+	Type string `json:"type" binding:"required,oneof=like dislike"`
+}
+
+// AddFeedback 添加反馈
+func (h *ChatHandler) AddFeedback(c *gin.Context) {
+	messageId := c.Param("id")
+	userId := c.GetInt("userId")
+
+	var req FeedbackRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "请求参数错误"})
+		return
+	}
+
+	// 验证消息所有权
+	var msg models.Message
+	if err := h.db.Where("id = ?", messageId).First(&msg).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "message": "消息不存在"})
+		return
+	}
+
+	var session models.ChatSession
+	if err := h.db.Where("id = ? AND user_id = ?", msg.SessionID, userId).First(&session).Error; err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "message": "无权操作此消息"})
+		return
+	}
+
+	// 更新反馈计数
+	updates := make(map[string]interface{})
+	if req.Type == "like" {
+		updates["likes"] = gorm.Expr("COALESCE(likes, 0) + 1")
+	} else {
+		updates["dislikes"] = gorm.Expr("COALESCE(dislikes, 0) + 1")
+	}
+
+	if err := h.db.Model(&msg).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "反馈失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "反馈成功"})
+}
+
+// RegenerateRequest 重新生成请求
+type RegenerateRequest struct {
+	MessageId string `json:"messageId"`
+}
+
+// RegenerateReply 重新生成回复
+func (h *ChatHandler) RegenerateReply(c *gin.Context) {
+	sessionId := c.Param("sessionId")
+	userId := c.GetInt("userId")
+
+	var req RegenerateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "请求参数错误"})
+		return
+	}
+
+	// 验证会话所有权
+	var session models.ChatSession
+	if err := h.db.Where("id = ? AND user_id = ?", sessionId, userId).First(&session).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "message": "会话不存在"})
+		return
+	}
+
+	// 获取最后一条用户消息
+	var lastUserMsg models.Message
+	if err := h.db.Where("session_id = ? AND role = 'user'", sessionId).
+		Order("created_at DESC").First(&lastUserMsg).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "message": "未找到用户消息"})
+		return
+	}
+
+	// 调用 AI 重新生成
+	response, err := h.callAnythingLLM(session.AnythingLLMSlug, lastUserMsg.Content, h.config.AnythingLLM.APIKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "生成失败: " + err.Error()})
+		return
+	}
+
+	// 更新或创建 AI 回复
+	var aiMsg models.Message
+	if err := h.db.Where("session_id = ? AND role = 'assistant'", sessionId).
+		Order("created_at DESC").First(&aiMsg).Error; err == nil {
+		// 更新现有回复
+		h.db.Model(&aiMsg).Updates(map[string]interface{}{
+			"content":    response,
+			"updated_at": time.Now(),
+		})
+	} else {
+		// 创建新回复
+		aiMsg = models.Message{
+			SessionID: sessionId,
+			Role:      "assistant",
+			Content:   response,
+		}
+		h.db.Create(&aiMsg)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "重新生成成功", "data": aiMsg})
+}
+
+// ExportSession 导出会话
+func (h *ChatHandler) ExportSession(c *gin.Context) {
+	sessionId := c.Param("id")
+	userId := c.GetInt("userId")
+	format := c.DefaultQuery("format", "md")
+
+	// 验证会话所有权
+	var session models.ChatSession
+	if err := h.db.Where("id = ? AND user_id = ?", sessionId, userId).First(&session).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "message": "会话不存在"})
+		return
+	}
+
+	// 获取会话消息
+	var messages []models.Message
+	if err := h.db.Where("session_id = ?", sessionId).Order("created_at ASC").Find(&messages).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "获取消息失败"})
+		return
+	}
+
+	var content string
+	if format == "json" {
+		// JSON 格式
+		data := map[string]interface{}{
+			"sessionId":   sessionId,
+			"title":       session.Title,
+			"createdAt":   session.CreatedAt,
+			"messages":    messages,
+		}
+		jsonData, _ := json.MarshalIndent(data, "", "  ")
+		content = string(jsonData)
+	} else {
+		// Markdown 格式
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("# %s\n\n", session.Title))
+		sb.WriteString(fmt.Sprintf("**创建时间**: %s\n\n", session.CreatedAt.Format("2006-01-02 15:04:05")))
+		sb.WriteString("---\n\n")
+		
+		for _, msg := range messages {
+			role := "用户"
+			if msg.Role == "assistant" {
+				role = "AI"
+			}
+			sb.WriteString(fmt.Sprintf("### %s (%s)\n\n%s\n\n", role, msg.CreatedAt.Format("15:04:05"), msg.Content))
+		}
+		content = sb.String()
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"message": "导出成功",
+		"data": content,
+	})
+}
 	userId, _ := c.Get("userId")
 	sessionId := c.Param("id")
 

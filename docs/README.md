@@ -1,93 +1,141 @@
-# RoleCraft AI 文档中心
+# RoleCraft AI - 文档索引
 
-欢迎使用 RoleCraft AI 文档中心。这里包含完整的用户指南、技术文档、开发者文档和营销资料。
+**更新时间**: 2026-02-28  
+**文档总数**: 15+ 个
 
 ---
 
-## 📚 文档导航
+## 📖 核心文档
 
-### 1. 用户文档 👥
-面向最终用户的使用指南
-
-| 文档 | 说明 | 阅读时间 |
-|------|------|----------|
-| [快速开始指南](./user/quickstart.md) | 5 分钟上手 RoleCraft AI | 5 分钟 |
-| [功能使用手册](./user/user-guide.md) | 完整功能说明 | 20 分钟 |
-| [最佳实践](./user/best-practices.md) | 使用技巧与最佳实践 | 10 分钟 |
-| [常见问题 FAQ](./user/faq.md) | 常见问题解答 | 5 分钟 |
-| [视频教程脚本](./user/video-scripts.md) | 视频教程配套脚本 | - |
-
-### 2. 技术文档 🛠️
-面向技术人员和实施团队
-
-| 文档 | 说明 | 阅读时间 |
-|------|------|----------|
-| [API 完整文档](./technical/api-reference.md) | RESTful API 接口文档 | 30 分钟 |
-| [部署指南](./technical/deployment-guide.md) | 生产环境部署步骤 | 15 分钟 |
-| [开发环境配置](./technical/dev-setup.md) | 本地开发环境搭建 | 10 分钟 |
-| [数据库设计文档](./technical/database-design.md) | 数据模型与表结构 | 15 分钟 |
-| [系统架构图](./technical/architecture.md) | 技术架构详解 | 20 分钟 |
-
-### 3. 开发者文档 💻
-面向贡献者和开发者
-
-| 文档 | 说明 | 阅读时间 |
-|------|------|----------|
-| [贡献指南](./developer/contributing.md) | 如何参与项目开发 | 10 分钟 |
-| [代码风格指南](./developer/code-style.md) | 代码规范与约定 | 5 分钟 |
-| [Git 工作流](./developer/git-workflow.md) | 版本控制流程 | 5 分钟 |
-| [发布流程](./developer/release-process.md) | 版本发布步骤 | 10 分钟 |
-
-### 4. 营销文档 📢
-面向市场和推广团队
-
-| 文档 | 说明 | 用途 |
+| 文档 | 说明 | 路径 |
 |------|------|------|
-| [Product Hunt 页面文案](./marketing/product-hunt.md) | Product Hunt 发布文案 | 产品发布 |
-| [产品单页](./marketing/one-pager.md) | 产品简介单页 | 销售资料 |
-| [功能对比表](./marketing/comparison.md) | 竞品功能对比 | 市场竞争 |
-| [定价说明](./marketing/pricing.md) | 定价策略说明 | 销售定价 |
+| **README.md** | 项目说明 | `./README.md` |
+| **PRD.md** | 产品需求文档 | `./PRD.md` |
+| **FEATURES.md** | 功能清单 | `./FEATURES.md` |
+| **TODO.md** | 待办事项 | `./TODO.md` |
+| **PROJECT-STATUS.md** | 项目状态 | `./PROJECT-STATUS.md` |
+| **ROADMAP.md** | 路线图 | `./ROADMAP.md` |
+| **FINAL-COMPLETION-REPORT.md** | 完成报告 | `./FINAL-COMPLETION-REPORT.md` |
 
 ---
 
-## 🚀 快速链接
+## 🚀 部署文档
 
-- **新手入门**: [快速开始指南](./user/quickstart.md)
-- **API 开发**: [API 参考文档](./technical/api-reference.md)
-- **部署上线**: [部署指南](./technical/deployment-guide.md)
-- **参与贡献**: [贡献指南](./developer/contributing.md)
-- **产品介绍**: [产品单页](./marketing/one-pager.md)
+| 文档 | 说明 | 路径 |
+|------|------|------|
+| **简单部署** | 快速启动指南 | `deployment/DEPLOYMENT-SIMPLE.md` |
+| **完整部署** | 生产环境部署 | `deployment/DEPLOYMENT-GUIDE-COMPLETE.md` |
+| **Docker 部署** | Docker 配置 | `deployment/DOCKER-SETUP.md` |
+| **本地运行** | 开发环境配置 | `deployment/LOCAL-DEMO.md` |
 
 ---
 
-## 📖 外部文档
+## 📚 用户文档（docs/user/）
 
-| 文档 | 位置 |
+| 文档 | 说明 |
 |------|------|
-| 产品需求文档 (PRD) | [PRD.md](../PRD.md) |
-| 技术架构设计 | [ARCHITECTURE.md](../ARCHITECTURE.md) |
-| UI 设计规范 | [UI-DESIGN.md](../UI-DESIGN.md) |
-| 功能列表 | [FEATURES.md](../FEATURES.md) |
-| 项目状态 | [PROJECT_STATUS.md](../PROJECT_STATUS.md) |
-| 快速启动 | [QUICKSTART.md](../QUICKSTART.md) |
-| 路线图 | [ROADMAP.md](../ROADMAP.md) |
+| **快速开始** | 新用户入门指南 |
+| **AI 对话** | 对话功能使用指南 |
+| **角色管理** | 角色创建和管理 |
+| **知识库** | 知识库使用指南 |
+| **设置** | 个人设置说明 |
 
 ---
 
-## 📞 支持与反馈
+## 💻 开发文档（docs/developer/）
 
-- **GitHub Issues**: [提交问题](https://github.com/mjscjj/rolecraft-ai/issues)
-- **API 文档**: http://localhost:8080/swagger
-- **技术讨论**: GitHub Discussions
-
----
-
-## 📝 文档更新日志
-
-| 日期 | 更新内容 | 作者 |
-|------|----------|------|
-| 2026-02-27 | 初始文档体系建立 | RoleCraft AI Team |
+| 文档 | 说明 |
+|------|------|
+| **架构设计** | 系统架构说明 |
+| **API 参考** | API 接口文档 |
+| **数据库设计** | 数据表结构 |
+| **代码规范** | 开发规范指南 |
+| **测试指南** | 测试编写指南 |
 
 ---
 
-*Last Updated: 2026-02-27*
+## 🔧 技术文档（docs/technical/）
+
+| 文档 | 说明 |
+|------|------|
+| **OpenRouter 集成** | AI 模型集成 |
+| **AnythingLLM 集成** | RAG 集成 |
+| **深度思考模块** | 思考功能实现 |
+| **性能优化** | 优化指南 |
+| **故障排除** | 常见问题解决 |
+
+---
+
+## 📊 市场文档（docs/marketing/）
+
+| 文档 | 说明 |
+|------|------|
+| **产品定位** | 产品定位说明 |
+| **竞品分析** | 竞争对手分析 |
+| **发布计划** | Product Hunt 发布 |
+| **定价策略** | 价格方案 |
+
+---
+
+## 🗂️ 归档文档（archive/）
+
+以下文档已归档，仅供参考：
+
+### 测试报告
+- E2E 测试报告
+- 性能测试报告
+- Mock AI 测试报告
+
+### 开发日志
+- 自主开发日志
+- 早间汇报
+- 完成报告
+
+### 修复记录
+- Aliyun 修复
+- AnythingLLM 修复
+- 前端修复
+
+### 调研分析
+- 竞品分析
+- 盈利策略
+- 差距分析
+
+---
+
+## 📝 文档规范
+
+### 命名规范
+- 使用英文文件名
+- 使用大写字母和连字符
+- 例如：`DEPLOYMENT-GUIDE.md`
+
+### 内容规范
+- 包含更新时间
+- 包含状态标识
+- 使用清晰的标题层级
+- 添加代码示例
+
+### 维护规范
+- 定期更新过时文档
+- 删除无用文档
+- 保持文档结构清晰
+
+---
+
+## 🔍 快速查找
+
+### 我想...
+- **快速开始** → 查看 `README.md` 或 `QUICKSTART.md`
+- **部署项目** → 查看 `deployment/` 目录
+- **了解功能** → 查看 `FEATURES.md`
+- **查看 API** → 查看 `docs/developer/API.md`
+- **解决问题** → 查看 `docs/technical/TROUBLESHOOTING.md`
+- **查看待办** → 查看 `TODO.md`
+- **了解进度** → 查看 `PROJECT-STATUS.md`
+
+---
+
+**文档维护**: 开发团队  
+**最后更新**: 2026-02-28  
+**下次审查**: 每周审查

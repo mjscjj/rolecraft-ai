@@ -110,8 +110,12 @@ type Message struct {
 	SessionID  string    `json:"sessionId" gorm:"index"`
 	Role       string    `json:"role"`
 	Content    string    `json:"content"`
+	Likes      int       `json:"likes" gorm:"default:0"`
+	Dislikes   int       `json:"dislikes" gorm:"default:0"`
+	IsEdited   bool      `json:"isEdited" gorm:"default:false"`
 	Sources    JSON      `json:"sources" gorm:"type:text"`
 	TokensUsed int       `json:"tokensUsed"`
+	UpdatedAt  time.Time `json:"updatedAt"`
 	CreatedAt  time.Time `json:"createdAt"`
 }
 
