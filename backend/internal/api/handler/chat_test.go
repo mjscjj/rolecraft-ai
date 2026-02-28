@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
 	"rolecraft-ai/internal/api/handler"
@@ -20,7 +20,7 @@ import (
 // TestUpdateMessage 测试编辑消息
 func TestUpdateMessage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	
+
 	db := setupTestDB(t)
 	cfg := &config.Config{}
 	chatHandler := handler.NewChatHandler(db, cfg)
@@ -54,23 +54,26 @@ func TestUpdateMessage(t *testing.T) {
 	t.Run("Update user message", func(t *testing.T) {
 		reqBody := map[string]string{"content": "Updated content"}
 		jsonBody, _ := json.Marshal(reqBody)
-		
-		req, _ := http.NewRequest("PUT", "/api/v1/messages/"+message.ID, bytes.NewBuffer(jsonBody))
+
+		req, _ := http.NewRequest("PUT", "/api/v1/chat/"+session.ID+"/messages/"+message.ID, bytes.NewBuffer(jsonBody))
 		req.Header.Set("Content-Type", "application/json")
-		
+
 		w := httptest.NewRecorder()
 		ctx, _ := gin.CreateTestContext(w)
 		ctx.Request = req
 		ctx.Set("userId", user.ID)
-		ctx.Params = []gin.Param{{Key: "id", Value: message.ID}}
-		
+		ctx.Params = []gin.Param{
+			{Key: "id", Value: session.ID},
+			{Key: "msgId", Value: message.ID},
+		}
+
 		chatHandler.UpdateMessage(ctx)
-		
+
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		// 验证数据库更新
 		var updatedMsg models.Message
-		db.First(&updatedMsg, message.ID)
+		db.First(&updatedMsg, "id = ?", message.ID)
 		assert.Equal(t, "Updated content", updatedMsg.Content)
 		assert.True(t, updatedMsg.IsEdited)
 	})
@@ -87,18 +90,21 @@ func TestUpdateMessage(t *testing.T) {
 
 		reqBody := map[string]string{"content": "Hacked content"}
 		jsonBody, _ := json.Marshal(reqBody)
-		
-		req, _ := http.NewRequest("PUT", "/api/v1/messages/"+aiMsg.ID, bytes.NewBuffer(jsonBody))
+
+		req, _ := http.NewRequest("PUT", "/api/v1/chat/"+session.ID+"/messages/"+aiMsg.ID, bytes.NewBuffer(jsonBody))
 		req.Header.Set("Content-Type", "application/json")
-		
+
 		w := httptest.NewRecorder()
 		ctx, _ := gin.CreateTestContext(w)
 		ctx.Request = req
 		ctx.Set("userId", user.ID)
-		ctx.Params = []gin.Param{{Key: "id", Value: aiMsg.ID}}
-		
+		ctx.Params = []gin.Param{
+			{Key: "id", Value: session.ID},
+			{Key: "msgId", Value: aiMsg.ID},
+		}
+
 		chatHandler.UpdateMessage(ctx)
-		
+
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 }
@@ -106,7 +112,7 @@ func TestUpdateMessage(t *testing.T) {
 // TestAddFeedback 测试添加反馈
 func TestAddFeedback(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	
+
 	db := setupTestDB(t)
 	cfg := &config.Config{}
 	chatHandler := handler.NewChatHandler(db, cfg)
@@ -124,22 +130,22 @@ func TestAddFeedback(t *testing.T) {
 	t.Run("Add like feedback", func(t *testing.T) {
 		reqBody := map[string]string{"type": "like"}
 		jsonBody, _ := json.Marshal(reqBody)
-		
+
 		req, _ := http.NewRequest("POST", "/api/v1/messages/"+message.ID+"/feedback", bytes.NewBuffer(jsonBody))
 		req.Header.Set("Content-Type", "application/json")
-		
+
 		w := httptest.NewRecorder()
 		ctx, _ := gin.CreateTestContext(w)
 		ctx.Request = req
 		ctx.Set("userId", user.ID)
 		ctx.Params = []gin.Param{{Key: "id", Value: message.ID}}
-		
+
 		chatHandler.AddFeedback(ctx)
-		
+
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var updatedMsg models.Message
-		db.First(&updatedMsg, message.ID)
+		db.First(&updatedMsg, "id = ?", message.ID)
 		assert.Equal(t, 1, updatedMsg.Likes)
 		assert.Equal(t, 0, updatedMsg.Dislikes)
 	})
@@ -147,22 +153,22 @@ func TestAddFeedback(t *testing.T) {
 	t.Run("Add dislike feedback", func(t *testing.T) {
 		reqBody := map[string]string{"type": "dislike"}
 		jsonBody, _ := json.Marshal(reqBody)
-		
+
 		req, _ := http.NewRequest("POST", "/api/v1/messages/"+message.ID+"/feedback", bytes.NewBuffer(jsonBody))
 		req.Header.Set("Content-Type", "application/json")
-		
+
 		w := httptest.NewRecorder()
 		ctx, _ := gin.CreateTestContext(w)
 		ctx.Request = req
 		ctx.Set("userId", user.ID)
 		ctx.Params = []gin.Param{{Key: "id", Value: message.ID}}
-		
+
 		chatHandler.AddFeedback(ctx)
-		
+
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var updatedMsg models.Message
-		db.First(&updatedMsg, message.ID)
+		db.First(&updatedMsg, "id = ?", message.ID)
 		assert.Equal(t, 1, updatedMsg.Likes)
 		assert.Equal(t, 1, updatedMsg.Dislikes)
 	})
@@ -171,7 +177,7 @@ func TestAddFeedback(t *testing.T) {
 // TestExportSession 测试导出会话
 func TestExportSession(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	
+
 	db := setupTestDB(t)
 	cfg := &config.Config{}
 	chatHandler := handler.NewChatHandler(db, cfg)
@@ -190,15 +196,15 @@ func TestExportSession(t *testing.T) {
 
 	t.Run("Export as Markdown", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", "/api/v1/chat-sessions/"+session.ID+"/export?format=md", nil)
-		
+
 		w := httptest.NewRecorder()
 		ctx, _ := gin.CreateTestContext(w)
 		ctx.Request = req
 		ctx.Set("userId", user.ID)
 		ctx.Params = []gin.Param{{Key: "id", Value: session.ID}}
-		
+
 		chatHandler.ExportSession(ctx)
-		
+
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Body.String(), "# Test Session")
 		assert.Contains(t, w.Body.String(), "Hello")
@@ -207,32 +213,100 @@ func TestExportSession(t *testing.T) {
 
 	t.Run("Export as JSON", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", "/api/v1/chat-sessions/"+session.ID+"/export?format=json", nil)
-		
+
 		w := httptest.NewRecorder()
 		ctx, _ := gin.CreateTestContext(w)
 		ctx.Request = req
 		ctx.Set("userId", user.ID)
 		ctx.Params = []gin.Param{{Key: "id", Value: session.ID}}
-		
+
 		chatHandler.ExportSession(ctx)
-		
+
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response map[string]interface{}
 		json.Unmarshal(w.Body.Bytes(), &response)
 		assert.Equal(t, float64(0), response["code"])
 	})
 }
 
+func TestRegenerateMessage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupTestDB(t)
+	cfg := &config.Config{}
+	chatHandler := handler.NewChatHandler(db, cfg)
+
+	user := models.User{ID: "regen-user", Email: "regen@example.com", PasswordHash: "hashed"}
+	db.Create(&user)
+
+	session := models.ChatSession{ID: "regen-session", UserID: user.ID, Title: "Regen Session"}
+	db.Create(&session)
+
+	userMsg := models.Message{
+		ID:        "regen-user-msg",
+		SessionID: session.ID,
+		Role:      "user",
+		Content:   "hello",
+	}
+	assistantMsg := models.Message{
+		ID:        "regen-assistant-msg",
+		SessionID: session.ID,
+		Role:      "assistant",
+		Content:   "old answer",
+	}
+	db.Create(&userMsg)
+	db.Create(&assistantMsg)
+
+	t.Run("Cannot regenerate user message", func(t *testing.T) {
+		req, _ := http.NewRequest("POST", "/api/v1/chat/"+session.ID+"/messages/"+userMsg.ID+"/regenerate", bytes.NewBuffer([]byte(`{}`)))
+		req.Header.Set("Content-Type", "application/json")
+
+		w := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(w)
+		ctx.Request = req
+		ctx.Set("userId", user.ID)
+		ctx.Params = []gin.Param{
+			{Key: "id", Value: session.ID},
+			{Key: "msgId", Value: userMsg.ID},
+		}
+
+		chatHandler.RegenerateMessage(ctx)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), "can only regenerate assistant messages")
+	})
+
+	t.Run("Can regenerate assistant message", func(t *testing.T) {
+		req, _ := http.NewRequest("POST", "/api/v1/chat/"+session.ID+"/messages/"+assistantMsg.ID+"/regenerate", bytes.NewBuffer([]byte(`{}`)))
+		req.Header.Set("Content-Type", "application/json")
+
+		w := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(w)
+		ctx.Request = req
+		ctx.Set("userId", user.ID)
+		ctx.Params = []gin.Param{
+			{Key: "id", Value: session.ID},
+			{Key: "msgId", Value: assistantMsg.ID},
+		}
+
+		chatHandler.RegenerateMessage(ctx)
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var refreshed models.Message
+		db.First(&refreshed, "id = ?", assistantMsg.ID)
+		assert.NotEqual(t, "old answer", refreshed.Content)
+	})
+}
+
 // setupTestDB 创建测试数据库
 func setupTestDB(t *testing.T) *gorm.DB {
-	db, err := gorm.Open("sqlite3", ":memory:")
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("Failed to create test DB: %v", err)
 	}
-	
+
 	// 自动迁移
 	db.AutoMigrate(&models.User{}, &models.ChatSession{}, &models.Message{})
-	
+
 	return db
 }

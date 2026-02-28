@@ -39,7 +39,7 @@ type Workspace struct {
 // Role AI 角色 - 简化模型
 type Role struct {
 	ID             string    `json:"id" gorm:"primaryKey"`
-	UserID         string    `json:"userId" gorm:"index;not null"` // 关联用户
+	UserID         string    `json:"userId" gorm:"index"` // 关联用户（模板角色可为空）
 	Name           string    `json:"name"`
 	Avatar         string    `json:"avatar"`
 	Description    string    `json:"description"`

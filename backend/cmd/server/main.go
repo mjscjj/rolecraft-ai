@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
+	"gorm.io/gorm"
 	_ "rolecraft-ai/docs"
 	"rolecraft-ai/internal/api/handler"
 	mw "rolecraft-ai/internal/api/middleware"
@@ -48,6 +49,9 @@ func main() {
 	db, err := database.InitSQLite(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	if err := ensureLegacySchemaCompatibility(db); err != nil {
+		log.Fatalf("Failed to ensure legacy schema compatibility: %v", err)
 	}
 	if err := db.AutoMigrate(
 		&models.User{},
@@ -249,4 +253,17 @@ func main() {
 	if err := r.Run(":" + port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
+}
+
+// ensureLegacySchemaCompatibility 兼容旧版 SQLite 结构，避免 AutoMigrate 在旧库上失败
+func ensureLegacySchemaCompatibility(db *gorm.DB) error {
+	if !db.Migrator().HasTable(&models.Role{}) {
+		return nil
+	}
+	if !db.Migrator().HasColumn(&models.Role{}, "user_id") {
+		if err := db.Exec("ALTER TABLE roles ADD COLUMN user_id TEXT").Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }

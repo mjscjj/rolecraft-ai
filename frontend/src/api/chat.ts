@@ -140,6 +140,14 @@ export const chatApi = {
     if (!reader) return;
 
     const decoder = new TextDecoder();
+    let finished = false;
+    const doneOnce = () => {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      onDone();
+    };
 
     while (true) {
       const { done, value } = await reader.read();
@@ -156,7 +164,7 @@ export const chatApi = {
             onChunk(parsed.content);
           }
           if (parsed.done) {
-            onDone();
+            doneOnce();
           }
         } catch {
           // 忽略解析错误
@@ -164,7 +172,7 @@ export const chatApi = {
       }
     }
 
-    onDone();
+    doneOnce();
   },
 
   // 发送消息（流式 + 深度思考过程）
@@ -195,6 +203,14 @@ export const chatApi = {
     if (!reader) return;
 
     const decoder = new TextDecoder();
+    let finished = false;
+    const doneOnce = () => {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      handlers.onDone();
+    };
 
     while (true) {
       const { done, value } = await reader.read();
@@ -228,7 +244,7 @@ export const chatApi = {
           }
 
           if (parsed.done || parsed.type === 'done') {
-            handlers.onDone();
+            doneOnce();
           }
         } catch (err: any) {
           if (err instanceof Error) {
@@ -239,7 +255,7 @@ export const chatApi = {
       }
     }
 
-    handlers.onDone();
+    doneOnce();
   },
 
   // 切换角色

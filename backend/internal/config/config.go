@@ -30,11 +30,11 @@ func Load() *Config {
 		JWTSecret:       getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
 		OpenAIKey:       getEnv("OPENAI_API_KEY", ""),                      // 可选，使用 Mock AI
 		OpenRouterURL:   getEnv("OPENROUTER_URL", "https://openrouter.ai/api/v1"),
-		OpenRouterKey:   getEnv("OPENROUTER_KEY", "sk-or-v1-3592fb02bc6293692a756d866ba34ba92543f2823469c8783e71542931c950"),
+		OpenRouterKey:   getEnv("OPENROUTER_KEY", ""),
 		OpenRouterModel: getEnv("OPENROUTER_MODEL", "google/gemini-3-flash-preview"),
 		MilvusAddr:      getEnv("MILVUS_ADDR", ""),                         // 可选，空则禁用
-		AnythingLLMURL:  getEnv("ANYTHINGLLM_URL", "http://150.109.21.115:3001"),
-		AnythingLLMKey:  getEnv("ANYTHINGLLM_KEY", "sk-WaUmgZsMxgeHOpp8SJxK1rmVQxiwfiDJ"),
+		AnythingLLMURL:  getEnv("ANYTHINGLLM_URL", ""),
+		AnythingLLMKey:  getEnv("ANYTHINGLLM_KEY", ""),
 	}
 }
 
