@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Paperclip, MoreVertical } from 'lucide-react';
 import { MessageList } from './MessageList';
+import { API_BASE_URL as API_BASE } from '../../api/client';
 import './styles.css';
-
-const API_BASE = `${import.meta.env.VITE_API_URL || 'http://localhost:8080'}/api/v1`;
 
 /**
  * @typedef {Object} Message

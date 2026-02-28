@@ -1,5 +1,5 @@
 import type { ApiResponse } from './client';
-import client, { handleApiError } from './client';
+import client, { API_BASE_URL, handleApiError } from './client';
 
 // 会话类型
 export interface ChatSession {
@@ -139,9 +139,8 @@ export const chatApi = {
     signal?: AbortSignal
   ): Promise<void> => {
     const token = localStorage.getItem('token');
-    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
-    
-    const response = await fetch(`${API_BASE_URL}/api/v1/chat/${sessionId}/stream`, {
+
+    const response = await fetch(`${API_BASE_URL}/chat/${sessionId}/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -222,9 +221,8 @@ export const chatApi = {
     signal?: AbortSignal
   ): Promise<void> => {
     const token = localStorage.getItem('token');
-    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
-    const response = await fetch(`${API_BASE_URL}/api/v1/chat/${sessionId}/stream-with-thinking`, {
+    const response = await fetch(`${API_BASE_URL}/chat/${sessionId}/stream-with-thinking`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -395,9 +393,8 @@ export const chatApi = {
   // 导出会话
   export: async (sessionId: string, format: 'markdown' | 'json' | 'pdf'): Promise<Blob> => {
     const token = localStorage.getItem('token');
-    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
-    
-    const response = await fetch(`${API_BASE_URL}/api/v1/chat-sessions/${sessionId}/export`, {
+
+    const response = await fetch(`${API_BASE_URL}/chat-sessions/${sessionId}/export`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

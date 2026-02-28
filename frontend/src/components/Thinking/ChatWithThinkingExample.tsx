@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import ThinkingDisplay, { ThinkingProcess, ThinkingStep } from './ThinkingDisplay';
+import { API_BASE_URL as API_BASE } from '../../api/client';
 
 // 示例：如何在 Chat 页面中集成 ThinkingDisplay
-const API_BASE = `${import.meta.env.VITE_API_URL || 'http://localhost:8080'}/api/v1`;
 
 interface Message {
   id: string;

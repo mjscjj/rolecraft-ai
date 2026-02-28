@@ -2,11 +2,13 @@ import type { AxiosInstance, AxiosError } from 'axios';
 import axios from 'axios';
 
 // API 配置
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+const rawApiURL = String(import.meta.env.VITE_API_URL || 'http://localhost:8080').replace(/\/+$/, '');
+const API_ROOT = rawApiURL.endsWith('/api/v1') ? rawApiURL.slice(0, -7) : rawApiURL;
+export const API_BASE_URL = `${API_ROOT}/api/v1`;
 
 // 创建 Axios 实例
 const client: AxiosInstance = axios.create({
-  baseURL: `${API_BASE_URL}/api/v1`,
+  baseURL: API_BASE_URL,
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
