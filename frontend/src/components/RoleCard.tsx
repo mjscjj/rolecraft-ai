@@ -5,9 +5,11 @@ interface RoleCardProps {
   role: Role;
   onClick?: () => void;
   onUse?: () => void;
+  onPreview?: () => void;
+  onEdit?: () => void;
 }
 
-export const RoleCard: FC<RoleCardProps> = ({ role, onClick, onUse }) => {
+export const RoleCard: FC<RoleCardProps> = ({ role, onClick, onUse, onPreview, onEdit }) => {
   return (
     <div 
       className="bg-white rounded-xl p-6 shadow-md hover:shadow-lg transition-all duration-200 hover:-translate-y-1 cursor-pointer group"
@@ -41,10 +43,28 @@ export const RoleCard: FC<RoleCardProps> = ({ role, onClick, onUse }) => {
         </div>
       )}
       
-      <div className="flex gap-2 mt-4 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="mt-4 flex gap-2 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
+        {onEdit && (
+          <button
+            className="flex-1 py-2 text-sm text-amber-700 hover:bg-amber-50 rounded-lg transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
+          >
+            编辑
+          </button>
+        )}
         <button 
           className="flex-1 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-          onClick={(e) => { e.stopPropagation(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onPreview) {
+              onPreview();
+              return;
+            }
+            onClick?.();
+          }}
         >
           预览
         </button>

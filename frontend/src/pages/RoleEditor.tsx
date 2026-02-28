@@ -1,5 +1,6 @@
-import type { FC } from 'react'; import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import type { FC } from 'react';
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { 
   ChevronRight, 
   ChevronLeft, 
@@ -38,8 +39,11 @@ const documentsList = [
 
 export const RoleEditor: FC = () => {
   const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
+  const isEditMode = Boolean(id);
   const [currentStep, setCurrentStep] = useState(1);
   const [publishing, setPublishing] = useState(false);
+  const [loadingRole, setLoadingRole] = useState(false);
   const [error, setError] = useState('');
   const [isPublic, setIsPublic] = useState(false);
   const [formData, setFormData] = useState({
@@ -52,6 +56,47 @@ export const RoleEditor: FC = () => {
   });
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
+
+  const parseModelConfig = (value: unknown): Record<string, any> => {
+    if (!value) return {};
+    if (typeof value === 'object') return value as Record<string, any>;
+    if (typeof value !== 'string') return {};
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  };
+
+  useEffect(() => {
+    const loadRoleForEdit = async () => {
+      if (!isEditMode || !id) return;
+      setLoadingRole(true);
+      setError('');
+      try {
+        const response = await client.get(`/roles/${id}`);
+        const payload = response?.data?.data || {};
+        const modelConfig = parseModelConfig(payload.modelConfig);
+        setFormData({
+          name: payload.name || '',
+          description: payload.description || '',
+          category: payload.category || '通用',
+          systemPrompt: payload.systemPrompt || '',
+          welcomeMessage: payload.welcomeMessage || '',
+          temperature: typeof modelConfig.temperature === 'number' ? modelConfig.temperature : 0.7,
+        });
+        setSelectedSkills(Array.isArray(modelConfig.skills) ? modelConfig.skills : []);
+        setSelectedDocs(Array.isArray(modelConfig.documents) ? modelConfig.documents : []);
+        setIsPublic(Boolean(payload.isPublic));
+      } catch (err: any) {
+        setError(err?.response?.data?.error || '加载角色失败');
+      } finally {
+        setLoadingRole(false);
+      }
+    };
+    loadRoleForEdit();
+  }, [id, isEditMode]);
 
   const handleNext = () => {
     if (currentStep < 5) setCurrentStep(currentStep + 1);
@@ -91,7 +136,7 @@ export const RoleEditor: FC = () => {
     setError('');
 
     try {
-      const response = await client.post('/roles', {
+      const payload = {
         name: formData.name.trim(),
         description: formData.description.trim(),
         category: formData.category,
@@ -103,15 +148,19 @@ export const RoleEditor: FC = () => {
           skills: selectedSkills,
           documents: selectedDocs,
         },
-      });
+      };
+      const response = isEditMode && id
+        ? await client.put(`/roles/${id}`, payload)
+        : await client.post('/roles', payload);
 
       if (response.data.code === 200 || response.data.code === 0) {
-        navigate(`/chat/${response.data.data.id}`);
+        const roleId = isEditMode && id ? id : response.data.data.id;
+        navigate(`/chat/${roleId}`);
       } else {
-        setError('发布失败，请重试');
+        setError(isEditMode ? '更新失败，请重试' : '发布失败，请重试');
       }
     } catch (err: any) {
-      setError(err.response?.data?.error || '发布失败，请重试');
+      setError(err.response?.data?.error || (isEditMode ? '更新失败，请重试' : '发布失败，请重试'));
     } finally {
       setPublishing(false);
     }
@@ -121,9 +170,14 @@ export const RoleEditor: FC = () => {
     <div className="max-w-5xl mx-auto">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-slate-900">创建新角色</h1>
-        <p className="text-slate-500 mt-1">配置你的 AI 数字员工</p>
+        <h1 className="text-2xl font-bold text-slate-900">{isEditMode ? '编辑角色' : '创建新角色'}</h1>
+        <p className="text-slate-500 mt-1">{isEditMode ? '修改角色配置并保存' : '配置你的 AI 数字员工'}</p>
       </div>
+      {loadingRole && (
+        <div className="mb-4 rounded-lg bg-slate-50 px-4 py-2 text-sm text-slate-600">
+          正在加载角色数据...
+        </div>
+      )}
 
       {/* Step Navigation */}
       <div className="mb-8">
@@ -435,11 +489,11 @@ export const RoleEditor: FC = () => {
             ) : (
               <button
                 onClick={handlePublish}
-                disabled={publishing}
+                disabled={publishing || loadingRole}
                 className="flex items-center gap-2 px-6 py-2.5 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Play className="w-5 h-5" />
-                {publishing ? '发布中...' : '发布角色'}
+                {publishing ? (isEditMode ? '保存中...' : '发布中...') : (isEditMode ? '保存修改' : '发布角色')}
               </button>
             )}
           </div>

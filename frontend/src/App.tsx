@@ -1,8 +1,8 @@
 import { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { Layout } from './components/Layout';
-import { ErrorBoundary, AsyncBoundary } from './components/ErrorBoundary';
-import { withAsyncErrorBoundary } from './components/ErrorBoundary';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import AsyncBoundary from './components/AsyncBoundary';
 
 const Dashboard = lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })));
 const Login = lazy(() => import('./pages/Login').then((m) => ({ default: m.Login })));
@@ -55,6 +55,7 @@ const App = () => {
             <Route path="/" element={<Dashboard />} />
             <Route path="/roles" element={<RoleMarket />} />
             <Route path="/roles/create" element={<RoleEditor />} />
+            <Route path="/roles/:id/edit" element={<RoleEditor />} />
             <Route path="/documents" element={<KnowledgeBase />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/settings" element={<Settings />} />

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bot, Plus, MessageSquare, Sparkles } from 'lucide-react';
 import { RoleCard } from '../components/RoleCard';
+import RoleDefinitionPreview from '../components/RoleDefinitionPreview';
 import type { Role } from '../types';
 import client from '../api/client';
 
@@ -10,6 +11,7 @@ export const Dashboard = () => {
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ totalRoles: 0, totalChats: 0 });
+  const [previewRole, setPreviewRole] = useState<Role | null>(null);
 
   useEffect(() => {
     loadRoles();
@@ -155,6 +157,8 @@ export const Dashboard = () => {
                 key={role.id}
                 role={role}
                 onClick={() => navigate(`/chat/${role.id}`)}
+                onPreview={() => setPreviewRole(role)}
+                onEdit={() => navigate(`/roles/${role.id}/edit`)}
                 onUse={() => navigate(`/chat/${role.id}`)}
               />
             ))}
@@ -183,6 +187,27 @@ export const Dashboard = () => {
           ))}
         </div>
       </div>
+
+      <RoleDefinitionPreview
+        role={previewRole}
+        onClose={() => setPreviewRole(null)}
+        onEdit={
+          previewRole
+            ? () => {
+                navigate(`/roles/${previewRole.id}/edit`);
+                setPreviewRole(null);
+              }
+            : undefined
+        }
+        onUse={
+          previewRole
+            ? () => {
+                navigate(`/chat/${previewRole.id}`);
+                setPreviewRole(null);
+              }
+            : undefined
+        }
+      />
     </div>
   );
 };
