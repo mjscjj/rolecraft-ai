@@ -49,6 +49,25 @@ interface StreamWithThinkingHandlers {
   onDone: () => void;
 }
 
+const parseSSEEventData = (eventChunk: string): any | null => {
+  const data = eventChunk
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.replace(/^data:\s?/, ''))
+    .join('\n')
+    .trim();
+
+  if (!data) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+};
+
 // 对话 API
 export const chatApi = {
   // 获取会话列表
@@ -140,6 +159,7 @@ export const chatApi = {
     if (!reader) return;
 
     const decoder = new TextDecoder();
+    let buffer = '';
     let finished = false;
     const doneOnce = () => {
       if (finished) {
@@ -151,24 +171,36 @@ export const chatApi = {
 
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        break;
+      }
 
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n').filter(line => line.startsWith('data: '));
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split(/\r?\n\r?\n/);
+      buffer = events.pop() ?? '';
 
-      for (const line of lines) {
-        const data = line.slice(6);
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.content) {
-            onChunk(parsed.content);
-          }
-          if (parsed.done) {
-            doneOnce();
-          }
-        } catch {
-          // 忽略解析错误
+      for (const eventChunk of events) {
+        const parsed = parseSSEEventData(eventChunk);
+        if (!parsed) {
+          continue;
         }
+        if (parsed.content) {
+          onChunk(parsed.content);
+        }
+        if (parsed.done) {
+          doneOnce();
+        }
+      }
+    }
+
+    buffer += decoder.decode();
+    if (buffer.trim()) {
+      const parsed = parseSSEEventData(buffer);
+      if (parsed?.content) {
+        onChunk(parsed.content);
+      }
+      if (parsed?.done) {
+        doneOnce();
       }
     }
 
@@ -203,6 +235,7 @@ export const chatApi = {
     if (!reader) return;
 
     const decoder = new TextDecoder();
+    let buffer = '';
     let finished = false;
     const doneOnce = () => {
       if (finished) {
@@ -214,43 +247,62 @@ export const chatApi = {
 
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        break;
+      }
 
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n').filter((line) => line.startsWith('data: '));
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split(/\r?\n\r?\n/);
+      buffer = events.pop() ?? '';
 
-      for (const line of lines) {
-        const data = line.slice(6);
-        try {
-          const parsed = JSON.parse(data);
+      for (const eventChunk of events) {
+        const parsed = parseSSEEventData(eventChunk);
+        if (!parsed) {
+          continue;
+        }
 
-          if (parsed.type === 'error') {
-            const message = parsed?.data?.message || '深度思考请求失败';
-            throw new Error(message);
-          }
+        if (parsed.type === 'error') {
+          const message = parsed?.data?.message || '深度思考请求失败';
+          throw new Error(message);
+        }
 
-          if (parsed.type === 'thinking' && parsed.step?.content) {
-            handlers.onThinking?.(parsed.step.content);
-            continue;
-          }
+        if (parsed.type === 'thinking' && parsed.step?.content) {
+          handlers.onThinking?.(parsed.step.content);
+          continue;
+        }
 
-          if (parsed.type === 'answer' && parsed.content) {
-            handlers.onChunk(parsed.content);
-            continue;
-          }
+        if (parsed.type === 'answer' && parsed.content) {
+          handlers.onChunk(parsed.content);
+          continue;
+        }
 
-          if (parsed.content) {
-            handlers.onChunk(parsed.content);
-          }
+        if (parsed.content) {
+          handlers.onChunk(parsed.content);
+        }
 
-          if (parsed.done || parsed.type === 'done') {
-            doneOnce();
-          }
-        } catch (err: any) {
-          if (err instanceof Error) {
-            throw err;
-          }
-          // 忽略单条解析错误，继续处理后续流
+        if (parsed.done || parsed.type === 'done') {
+          doneOnce();
+        }
+      }
+    }
+
+    buffer += decoder.decode();
+    if (buffer.trim()) {
+      const parsed = parseSSEEventData(buffer);
+      if (parsed) {
+        if (parsed.type === 'error') {
+          const message = parsed?.data?.message || '深度思考请求失败';
+          throw new Error(message);
+        }
+        if (parsed.type === 'thinking' && parsed.step?.content) {
+          handlers.onThinking?.(parsed.step.content);
+        } else if (parsed.type === 'answer' && parsed.content) {
+          handlers.onChunk(parsed.content);
+        } else if (parsed.content) {
+          handlers.onChunk(parsed.content);
+        }
+        if (parsed.done || parsed.type === 'done') {
+          doneOnce();
         }
       }
     }
