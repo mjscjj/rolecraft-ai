@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ThinkingDisplay, { ThinkingProcess, ThinkingStep } from './ThinkingDisplay';
 
 // 示例：如何在 Chat 页面中集成 ThinkingDisplay
+const API_BASE = `${import.meta.env.VITE_API_URL || 'http://localhost:8080'}/api/v1`;
 
 interface Message {
   id: string;
@@ -49,7 +50,7 @@ const ChatWithThinkingExample: React.FC = () => {
 
     try {
       // 调用带思考过程的流式 API
-      const response = await fetch(`http://localhost:8080/api/v1/chat/${sessionId}/stream-with-thinking`, {
+      const response = await fetch(`${API_BASE}/chat/${sessionId}/stream-with-thinking`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

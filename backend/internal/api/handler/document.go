@@ -22,9 +22,9 @@ import (
 
 // AnythingLLMConfig AnythingLLM 配置
 type AnythingLLMConfig struct {
-	BaseURL    string
-	APIKey     string
-	Workspace  string
+	BaseURL   string
+	APIKey    string
+	Workspace string
 }
 
 // DocumentHandler 文档处理器
@@ -45,15 +45,9 @@ func NewDocumentHandler(db *gorm.DB) *DocumentHandler {
 
 	// AnythingLLM 配置
 	config := AnythingLLMConfig{
-		BaseURL:   os.Getenv("ANYTHINGLLM_BASE_URL"),
-		APIKey:    os.Getenv("ANYTHINGLLM_API_KEY"),
+		BaseURL:   normalizeAnythingLLMBaseURL(firstNonEmpty(os.Getenv("ANYTHINGLLM_BASE_URL"), os.Getenv("ANYTHINGLLM_URL"))),
+		APIKey:    firstNonEmpty(os.Getenv("ANYTHINGLLM_API_KEY"), os.Getenv("ANYTHINGLLM_KEY")),
 		Workspace: os.Getenv("ANYTHINGLLM_WORKSPACE"),
-	}
-	if config.BaseURL == "" {
-		config.BaseURL = "http://150.109.21.115:3001/api/v1"
-	}
-	if config.Workspace == "" {
-		config.Workspace = "user_001"
 	}
 
 	return &DocumentHandler{
@@ -62,6 +56,31 @@ func NewDocumentHandler(db *gorm.DB) *DocumentHandler {
 		maxFileSize: 50 * 1024 * 1024,
 		config:      config,
 	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func normalizeAnythingLLMBaseURL(raw string) string {
+	base := strings.TrimSpace(raw)
+	if base == "" {
+		return ""
+	}
+	base = strings.TrimSuffix(base, "/")
+	if strings.HasSuffix(base, "/api/v1") {
+		return base
+	}
+	return base + "/api/v1"
+}
+
+func (h *DocumentHandler) anythingLLMEnabled() bool {
+	return strings.TrimSpace(h.config.BaseURL) != "" && strings.TrimSpace(h.config.APIKey) != ""
 }
 
 var allowedTypes = map[string]bool{
@@ -238,6 +257,18 @@ func (h *DocumentHandler) processSingleFile(fileHeader *multipart.FileHeader, us
 
 // processDocumentAsync 异步处理文档上传到 AnythingLLM
 func (h *DocumentHandler) processDocumentAsync(docId, tempFilePath, userId string) {
+	if !h.anythingLLMEnabled() {
+		targetPath := filepath.Join(h.uploadDir, docId+filepath.Ext(tempFilePath))
+		finalPath := tempFilePath
+		if err := os.Rename(tempFilePath, targetPath); err == nil {
+			finalPath = targetPath
+		}
+		h.updateDocumentStatusWithMetadata(docId, "completed", finalPath, map[string]interface{}{
+			"processingMode": "local",
+		})
+		return
+	}
+
 	// 1. 上传到 AnythingLLM
 	anythingLLMFileId, hash, err := h.uploadToAnythingLLM(tempFilePath, userId)
 	if err != nil {
@@ -273,6 +304,10 @@ func (h *DocumentHandler) processDocumentAsync(docId, tempFilePath, userId strin
 
 // uploadToAnythingLLM 上传文档到 AnythingLLM
 func (h *DocumentHandler) uploadToAnythingLLM(filePath, userId string) (string, string, error) {
+	if !h.anythingLLMEnabled() {
+		return "", "", fmt.Errorf("anythingllm is not configured")
+	}
+
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
@@ -359,6 +394,10 @@ func (h *DocumentHandler) calculateFileHash(filePath string) (string, error) {
 
 // updateEmbeddings 更新 AnythingLLM 工作空间的 embeddings
 func (h *DocumentHandler) updateEmbeddings(workspace string) error {
+	if !h.anythingLLMEnabled() {
+		return fmt.Errorf("anythingllm is not configured")
+	}
+
 	reqBody := map[string]interface{}{}
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
@@ -399,9 +438,9 @@ func (h *DocumentHandler) updateEmbeddings(workspace string) error {
 // updateDocumentStatus 更新文档状态
 func (h *DocumentHandler) updateDocumentStatus(docId, status, errorMessage string) {
 	h.db.Model(&models.Document{}).Where("id = ?", docId).Updates(map[string]interface{}{
-		"status":         status,
-		"error_message":  errorMessage,
-		"updated_at":     time.Now(),
+		"status":        status,
+		"error_message": errorMessage,
+		"updated_at":    time.Now(),
 	})
 }
 
@@ -451,11 +490,11 @@ func (h *DocumentHandler) Search(c *gin.Context) {
 	}
 
 	var req struct {
-		Query   string            `json:"query"`
-		TopN    int               `json:"topN"`
-		Filters map[string]string `json:"filters"`
-		SortBy  string            `json:"sortBy"`
-		SortOrder string          `json:"sortOrder"`
+		Query     string            `json:"query"`
+		TopN      int               `json:"topN"`
+		Filters   map[string]string `json:"filters"`
+		SortBy    string            `json:"sortBy"`
+		SortOrder string            `json:"sortOrder"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -571,7 +610,7 @@ func (h *DocumentHandler) Search(c *gin.Context) {
 // highlightResults 高亮搜索结果
 func (h *DocumentHandler) highlightResults(docs []models.Document, query string) []map[string]interface{} {
 	result := make([]map[string]interface{}, len(docs))
-	
+
 	for i, doc := range docs {
 		docMap := map[string]interface{}{
 			"id":         doc.ID,
@@ -584,15 +623,15 @@ func (h *DocumentHandler) highlightResults(docs []models.Document, query string)
 			"folderId":   doc.FolderID,
 			"similarity": doc.Similarity,
 		}
-		
+
 		// 添加高亮名称
 		if query != "" {
 			docMap["highlightedName"] = h.highlightText(doc.Name, query)
 		}
-		
+
 		result[i] = docMap
 	}
-	
+
 	return result
 }
 
@@ -601,7 +640,7 @@ func (h *DocumentHandler) highlightText(text, query string) string {
 	if query == "" {
 		return text
 	}
-	
+
 	// 简单的高亮标记 (前端会渲染)
 	return strings.ReplaceAll(text, query, "<mark>"+query+"</mark>")
 }
@@ -678,11 +717,11 @@ func (h *DocumentHandler) Update(c *gin.Context) {
 	}
 
 	updateData := make(map[string]interface{})
-	
+
 	if req.Name != "" {
 		updateData["name"] = req.Name
 	}
-	
+
 	if req.FolderID != "" {
 		updateData["folder_id"] = req.FolderID
 	}
@@ -696,20 +735,20 @@ func (h *DocumentHandler) Update(c *gin.Context) {
 		if metadata == nil {
 			metadata = make(map[string]interface{})
 		}
-		
+
 		if req.Description != "" {
 			metadata["description"] = req.Description
 		}
 		if len(req.Tags) > 0 {
 			metadata["tags"] = req.Tags
 		}
-		
+
 		data, _ := json.Marshal(metadata)
 		updateData["metadata"] = models.JSON(data)
 	}
 
 	updateData["updated_at"] = time.Now()
-	
+
 	if result := h.db.Model(&document).Updates(updateData); result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 		return
@@ -1167,6 +1206,10 @@ func (h *DocumentHandler) DeleteFolder(c *gin.Context) {
 
 // deleteFromAnythingLLM 从 AnythingLLM 删除文档
 func (h *DocumentHandler) deleteFromAnythingLLM(filename, workspace string) error {
+	if !h.anythingLLMEnabled() {
+		return nil
+	}
+
 	reqBody := map[string]interface{}{
 		"filename": filename,
 	}
@@ -1235,6 +1278,10 @@ func getStatusMessage(doc models.Document) string {
 
 // vectorSearch 调用 AnythingLLM 向量搜索 API
 func (h *DocumentHandler) vectorSearch(query string, topN int, workspace string) ([]interface{}, error) {
+	if !h.anythingLLMEnabled() {
+		return nil, fmt.Errorf("anythingllm is not configured")
+	}
+
 	reqBody := map[string]interface{}{
 		"query": query,
 		"topN":  topN,

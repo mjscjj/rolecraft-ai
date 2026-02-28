@@ -3,7 +3,7 @@ import { Send, Paperclip, MoreVertical } from 'lucide-react';
 import { MessageList } from './MessageList';
 import './styles.css';
 
-const API_BASE = 'http://localhost:8080/api/v1';
+const API_BASE = `${import.meta.env.VITE_API_URL || 'http://localhost:8080'}/api/v1`;
 
 /**
  * @typedef {Object} Message
@@ -145,6 +145,18 @@ export const ChatStream = ({ roleId, roleName = 'AI 助手' }) => {
                   )
                 );
               }
+              if (data.assistantMessageId) {
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === aiMessageId
+                      ? { ...msg, id: data.assistantMessageId }
+                      : msg
+                  )
+                );
+              }
+              if (data.done) {
+                setStreamingMessageId(null);
+              }
             } catch (e) {
               console.warn('Failed to parse SSE data:', e);
             }
@@ -217,10 +229,38 @@ export const ChatStream = ({ roleId, roleName = 'AI 助手' }) => {
     }
   }, [messages, handleStreamChat]);
 
-  const handleFeedback = useCallback((messageId, feedback) => {
-    console.log(`Feedback for message ${messageId}: ${feedback}`);
-    // TODO: Send feedback to backend
-  }, []);
+  const handleFeedback = useCallback(async (messageId, feedback) => {
+    if (!sessionId || !messageId || messageId === 'welcome') return;
+
+    // 临时消息 ID（时间戳）未落库，无法评分
+    if (!/^[0-9a-fA-F-]{36}$/.test(messageId)) return;
+
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    try {
+      const response = await fetch(`${API_BASE}/chat/messages/${messageId}/rate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ rating: feedback }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId ? { ...msg, rating: feedback } : msg
+        )
+      );
+    } catch (err) {
+      console.error('Failed to send feedback:', err);
+    }
+  }, [sessionId]);
 
   return (
     <div className="chat-stream-container">

@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -61,12 +63,12 @@ type ChurnRiskUser struct {
 
 // ConversationQualityStats 对话质量统计
 type ConversationQualityStats struct {
-	AverageRating     float64 `json:"averageRating"`     // 平均评分
-	TotalRated        int64   `json:"totalRated"`        // 总评分数
-	SatisfactionRate  float64 `json:"satisfactionRate"`  // 满意度百分比
-	HighQualityCount  int64   `json:"highQualityCount"`  // 高质量对话数
-	MediumQualityCount int64  `json:"mediumQualityCount"` // 中等质量对话数
-	LowQualityCount   int64   `json:"lowQualityCount"`   // 低质量对话数
+	AverageRating      float64 `json:"averageRating"`      // 平均评分
+	TotalRated         int64   `json:"totalRated"`         // 总评分数
+	SatisfactionRate   float64 `json:"satisfactionRate"`   // 满意度百分比
+	HighQualityCount   int64   `json:"highQualityCount"`   // 高质量对话数
+	MediumQualityCount int64   `json:"mediumQualityCount"` // 中等质量对话数
+	LowQualityCount    int64   `json:"lowQualityCount"`    // 低质量对话数
 }
 
 // ReplyQualityStats 回复质量分析
@@ -86,24 +88,24 @@ type FAQStats struct {
 
 // SensitiveWordStats 敏感词统计
 type SensitiveWordStats struct {
-	Word        string    `json:"word"`
-	DetectCount int64     `json:"detectCount"`
+	Word           string    `json:"word"`
+	DetectCount    int64     `json:"detectCount"`
 	LastDetectedAt time.Time `json:"lastDetectedAt"`
-	Severity    string    `json:"severity"` // low/medium/high
+	Severity       string    `json:"severity"` // low/medium/high
 }
 
 // CostStats 成本统计
 type CostStats struct {
-	TotalTokens      int64   `json:"totalTokens"`
-	TotalCost        float64 `json:"totalCost"` // 总成本 (元)
-	AverageCostPerDay float64 `json:"averageCostPerDay"`
-	TokenBreakdown   TokenBreakdown `json:"tokenBreakdown"`
+	TotalTokens       int64          `json:"totalTokens"`
+	TotalCost         float64        `json:"totalCost"` // 总成本 (元)
+	AverageCostPerDay float64        `json:"averageCostPerDay"`
+	TokenBreakdown    TokenBreakdown `json:"tokenBreakdown"`
 }
 
 // TokenBreakdown Token 使用明细
 type TokenBreakdown struct {
-	InputTokens  int64 `json:"inputTokens"`
-	OutputTokens int64 `json:"outputTokens"`
+	InputTokens     int64 `json:"inputTokens"`
+	OutputTokens    int64 `json:"outputTokens"`
 	EmbeddingTokens int64 `json:"embeddingTokens"`
 }
 
@@ -127,40 +129,40 @@ type CostByUser struct {
 
 // CostTrend 成本趋势
 type CostTrend struct {
-	Date  string  `json:"date"`
-	Cost  float64 `json:"cost"`
-	Tokens int64  `json:"tokens"`
+	Date   string  `json:"date"`
+	Cost   float64 `json:"cost"`
+	Tokens int64   `json:"tokens"`
 }
 
 // CostPrediction 成本预测
 type CostPrediction struct {
-	PredictedCost      float64 `json:"predictedCost"`      // 预测成本
-	PredictedTokens    int64   `json:"predictedTokens"`    // 预测 Token 数
-	PredictionPeriod   string  `json:"predictionPeriod"`   // 预测周期 (week/month)
-	ConfidenceLevel    float64 `json:"confidenceLevel"`    // 置信度
-	GrowthRate         float64 `json:"growthRate"`         // 增长率
+	PredictedCost    float64 `json:"predictedCost"`    // 预测成本
+	PredictedTokens  int64   `json:"predictedTokens"`  // 预测 Token 数
+	PredictionPeriod string  `json:"predictionPeriod"` // 预测周期 (week/month)
+	ConfidenceLevel  float64 `json:"confidenceLevel"`  // 置信度
+	GrowthRate       float64 `json:"growthRate"`       // 增长率
 }
 
 // ReportData 报告数据
 type ReportData struct {
-	ReportType    string                 `json:"reportType"`    // weekly/monthly
-	PeriodStart   string                 `json:"periodStart"`
-	PeriodEnd     string                 `json:"periodEnd"`
-	GeneratedAt   string                 `json:"generatedAt"`
-	Summary       map[string]interface{} `json:"summary"`
-	KeyMetrics    []KeyMetric            `json:"keyMetrics"`
-	Trends        []TrendData            `json:"trends"`
-	Comparisons   ComparisonData         `json:"comparisons"`
-	Recommendations []string             `json:"recommendations"`
+	ReportType      string                 `json:"reportType"` // weekly/monthly
+	PeriodStart     string                 `json:"periodStart"`
+	PeriodEnd       string                 `json:"periodEnd"`
+	GeneratedAt     string                 `json:"generatedAt"`
+	Summary         map[string]interface{} `json:"summary"`
+	KeyMetrics      []KeyMetric            `json:"keyMetrics"`
+	Trends          []TrendData            `json:"trends"`
+	Comparisons     ComparisonData         `json:"comparisons"`
+	Recommendations []string               `json:"recommendations"`
 }
 
 // KeyMetric 关键指标
 type KeyMetric struct {
-	Name     string  `json:"name"`
-	Value    float64 `json:"value"`
-	Unit     string  `json:"unit"`
-	Change   float64 `json:"change"` // 变化百分比
-	Trend    string  `json:"trend"`  // up/down/stable
+	Name   string  `json:"name"`
+	Value  float64 `json:"value"`
+	Unit   string  `json:"unit"`
+	Change float64 `json:"change"` // 变化百分比
+	Trend  string  `json:"trend"`  // up/down/stable
 }
 
 // TrendData 趋势数据
@@ -171,25 +173,25 @@ type TrendData struct {
 
 // ComparisonData 对比数据
 type ComparisonData struct {
-	MoM      map[string]float64 `json:"mom"`  // 环比
-	YoY      map[string]float64 `json:"yoy"`  // 同比
+	MoM map[string]float64 `json:"mom"` // 环比
+	YoY map[string]float64 `json:"yoy"` // 同比
 }
 
 // DashboardMetrics Dashboard 核心指标
 type DashboardMetrics struct {
-	TotalUsers       int64                 `json:"totalUsers"`
-	ActiveUsers      int64                 `json:"activeUsers"`
-	TotalRoles       int64                 `json:"totalRoles"`
-	TotalSessions    int64                 `json:"totalSessions"`
-	TotalMessages    int64                 `json:"totalMessages"`
-	TotalDocuments   int64                 `json:"totalDocuments"`
-	TotalCost        float64               `json:"totalCost"`
-	AverageRating    float64               `json:"averageRating"`
-	UserActivity     *UserActivityStats    `json:"userActivity"`
-	CostStats        *CostStats            `json:"costStats"`
-	QualityStats     *ConversationQualityStats `json:"qualityStats"`
-	TopRoles         []CostByRole          `json:"topRoles"`
-	RecentTrends     []CostTrend           `json:"recentTrends"`
+	TotalUsers     int64                     `json:"totalUsers"`
+	ActiveUsers    int64                     `json:"activeUsers"`
+	TotalRoles     int64                     `json:"totalRoles"`
+	TotalSessions  int64                     `json:"totalSessions"`
+	TotalMessages  int64                     `json:"totalMessages"`
+	TotalDocuments int64                     `json:"totalDocuments"`
+	TotalCost      float64                   `json:"totalCost"`
+	AverageRating  float64                   `json:"averageRating"`
+	UserActivity   *UserActivityStats        `json:"userActivity"`
+	CostStats      *CostStats                `json:"costStats"`
+	QualityStats   *ConversationQualityStats `json:"qualityStats"`
+	TopRoles       []CostByRole              `json:"topRoles"`
+	RecentTrends   []CostTrend               `json:"recentTrends"`
 }
 
 // ===== API 接口实现 =====
@@ -235,7 +237,7 @@ func (h *AnalyticsHandler) GetDashboardMetrics(c *gin.Context) {
 	// 计算总成本和 Token 使用
 	var totalTokens int64
 	h.db.Model(&models.Message{}).Select("COALESCE(SUM(tokens_used), 0)").Scan(&totalTokens)
-	
+
 	totalCost := float64(totalTokens) * 0.00002 // 假设每 Token 0.00002 元
 
 	// 平均评分
@@ -362,7 +364,7 @@ func (h *AnalyticsHandler) GetRetentionRate(c *gin.Context) {
 func (h *AnalyticsHandler) GetChurnRiskUsers(c *gin.Context) {
 	// 查询 30 天未活跃的用户
 	thirtyDaysAgo := time.Now().AddDate(0, 0, -30)
-	
+
 	var sessions []models.ChatSession
 	h.db.Where("updated_at < ?", thirtyDaysAgo).
 		Order("updated_at ASC").
@@ -374,11 +376,11 @@ func (h *AnalyticsHandler) GetChurnRiskUsers(c *gin.Context) {
 		var user models.User
 		if h.db.First(&user, "id = ?", session.UserID).Error == nil {
 			daysInactive := int(time.Since(session.UpdatedAt).Hours() / 24)
-			riskLevel := "medium"
-			if daysInactive > 60 {
+			riskLevel := "low"
+			if daysInactive > 90 {
 				riskLevel = "high"
-			} else if daysInactive > 90 {
-				riskLevel = "low"
+			} else if daysInactive > 60 {
+				riskLevel = "medium"
 			}
 
 			var totalSessions int64
@@ -566,11 +568,11 @@ func (h *AnalyticsHandler) GetCostByUser(c *gin.Context) {
 	}
 
 	var userCosts []UserCost
-	h.db.Model(&models.Message{}).
-		Select("m.user_id as user_id, u.name as user_name, COALESCE(SUM(m.tokens_used), 0) as tokens_used").
+	h.db.Table("messages AS m").
+		Select("cs.user_id as user_id, u.name as user_name, COALESCE(SUM(m.tokens_used), 0) as tokens_used").
 		Joins("JOIN chat_sessions cs ON m.session_id = cs.id").
 		Joins("JOIN users u ON cs.user_id = u.id").
-		Group("m.user_id, u.name").
+		Group("cs.user_id, u.name").
 		Order("tokens_used DESC").
 		Limit(10).
 		Scan(&userCosts)
@@ -638,10 +640,10 @@ func (h *AnalyticsHandler) GetCostTrend(c *gin.Context) {
 // @Router /api/v1/analytics/cost/prediction [get]
 func (h *AnalyticsHandler) GetCostPrediction(c *gin.Context) {
 	period := c.DefaultQuery("period", "month")
-	
+
 	// 简单的线性预测 (实际应使用更复杂的算法)
 	recentTrend := h.getCostTrend(30)
-	
+
 	var totalCost float64
 	var totalTokens int64
 	for _, t := range recentTrend {
@@ -731,6 +733,7 @@ func (h *AnalyticsHandler) ExportReport(c *gin.Context) {
 	if reportType == "" {
 		reportType = "weekly"
 	}
+	format := strings.ToLower(c.DefaultQuery("format", "markdown"))
 
 	now := time.Now()
 	var periodStart time.Time
@@ -742,13 +745,24 @@ func (h *AnalyticsHandler) ExportReport(c *gin.Context) {
 
 	report := h.generateReportData(reportType, periodStart, now)
 
-	// 实际实现中，这里应该生成 PDF 文件
-	// 由于需要额外的 PDF 库依赖，这里返回 JSON 格式
-	c.JSON(http.StatusOK, gin.H{
-		"code":    200,
-		"message": "PDF export not implemented yet, returning JSON",
-		"data":    report,
-	})
+	dateTag := now.Format("20060102")
+	switch format {
+	case "json":
+		payload, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to encode report"})
+			return
+		}
+		filename := fmt.Sprintf("analytics-%s-%s.json", reportType, dateTag)
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+		c.Data(http.StatusOK, "application/json; charset=utf-8", payload)
+	case "markdown", "md":
+		filename := fmt.Sprintf("analytics-%s-%s.md", reportType, dateTag)
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+		c.Data(http.StatusOK, "text/markdown; charset=utf-8", []byte(h.renderReportMarkdown(report)))
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported format, use markdown or json"})
+	}
 }
 
 // ===== 辅助函数 =====
@@ -756,7 +770,7 @@ func (h *AnalyticsHandler) ExportReport(c *gin.Context) {
 // calculateUserActivity 计算用户活跃度
 func (h *AnalyticsHandler) calculateUserActivity() *UserActivityStats {
 	now := time.Now()
-	
+
 	// DAU: 今天有活动的用户
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	var dau int64
@@ -811,8 +825,8 @@ func (h *AnalyticsHandler) calculateCostStats() *CostStats {
 	}
 
 	return &CostStats{
-		TotalTokens:      totalTokens,
-		TotalCost:        totalCost,
+		TotalTokens:       totalTokens,
+		TotalCost:         totalCost,
 		AverageCostPerDay: avgCostPerDay,
 		TokenBreakdown: TokenBreakdown{
 			InputTokens:     inputTokens,
@@ -826,12 +840,12 @@ func (h *AnalyticsHandler) calculateCostStats() *CostStats {
 func (h *AnalyticsHandler) calculateQualityStats() *ConversationQualityStats {
 	// Mock 数据 - 实际应根据用户评分等数据计算
 	return &ConversationQualityStats{
-		AverageRating:     4.5,
-		TotalRated:        256,
-		SatisfactionRate:  92.5,
-		HighQualityCount:  180,
+		AverageRating:      4.5,
+		TotalRated:         256,
+		SatisfactionRate:   92.5,
+		HighQualityCount:   180,
 		MediumQualityCount: 65,
-		LowQualityCount:   11,
+		LowQualityCount:    11,
 	}
 }
 
@@ -905,20 +919,64 @@ func (h *AnalyticsHandler) getCostTrend(days int) []CostTrend {
 
 // generateReportData 生成报告数据
 func (h *AnalyticsHandler) generateReportData(reportType string, periodStart, periodEnd time.Time) *ReportData {
-	// 计算关键指标
-	dashboardMetrics := DashboardMetrics{}
-	
+	var totalUsers int64
+	h.db.Model(&models.User{}).Count(&totalUsers)
+
+	var totalRoles int64
+	h.db.Model(&models.Role{}).Count(&totalRoles)
+
+	var totalSessions int64
+	h.db.Model(&models.ChatSession{}).Count(&totalSessions)
+
+	var totalMessages int64
+	h.db.Model(&models.Message{}).Count(&totalMessages)
+
+	var totalDocuments int64
+	h.db.Model(&models.Document{}).Count(&totalDocuments)
+
+	var activeUsers int64
+	h.db.Model(&models.ChatSession{}).
+		Where("updated_at >= ? AND updated_at <= ?", periodStart, periodEnd).
+		Distinct("user_id").
+		Count(&activeUsers)
+
+	costStats := h.calculateCostStats()
+	qualityStats := h.calculateQualityStats()
+	userActivity := h.calculateUserActivity()
+	topRoles := h.getTopRolesByUsage(5)
+	dashboardMetrics := DashboardMetrics{
+		TotalUsers:     totalUsers,
+		ActiveUsers:    activeUsers,
+		TotalRoles:     totalRoles,
+		TotalSessions:  totalSessions,
+		TotalMessages:  totalMessages,
+		TotalDocuments: totalDocuments,
+		TotalCost:      costStats.TotalCost,
+		AverageRating:  qualityStats.AverageRating,
+		UserActivity:   userActivity,
+		CostStats:      costStats,
+		QualityStats:   qualityStats,
+		TopRoles:       topRoles,
+	}
+
 	// 关键指标
 	keyMetrics := []KeyMetric{
-		{Name: "活跃用户", Value: float64(dashboardMetrics.ActiveUsers), Unit: "人", Change: 12.5, Trend: "up"},
-		{Name: "对话次数", Value: float64(dashboardMetrics.TotalSessions), Unit: "次", Change: 8.3, Trend: "up"},
-		{Name: "平均评分", Value: dashboardMetrics.AverageRating, Unit: "分", Change: 2.1, Trend: "up"},
-		{Name: "总成本", Value: dashboardMetrics.TotalCost, Unit: "元", Change: -5.2, Trend: "down"},
+		{Name: "活跃用户", Value: float64(dashboardMetrics.ActiveUsers), Unit: "人", Change: 0, Trend: "stable"},
+		{Name: "对话次数", Value: float64(dashboardMetrics.TotalSessions), Unit: "次", Change: 0, Trend: "stable"},
+		{Name: "平均评分", Value: dashboardMetrics.AverageRating, Unit: "分", Change: 0, Trend: "stable"},
+		{Name: "总成本", Value: dashboardMetrics.TotalCost, Unit: "元", Change: 0, Trend: "stable"},
 	}
 
 	// 趋势数据
 	trends := []TrendData{}
-	costTrend := h.getCostTrend(30)
+	days := int(periodEnd.Sub(periodStart).Hours()/24) + 1
+	if days < 1 {
+		days = 1
+	}
+	if days > 90 {
+		days = 90
+	}
+	costTrend := h.getCostTrend(days)
 	for _, t := range costTrend {
 		trends = append(trends, TrendData{
 			Date:  t.Date,
@@ -931,31 +989,97 @@ func (h *AnalyticsHandler) generateReportData(reportType string, periodStart, pe
 		MoM: map[string]float64{
 			"活跃用户": 12.5,
 			"对话次数": 8.3,
-			"总成本":   -5.2,
+			"总成本":  -5.2,
 		},
 		YoY: map[string]float64{
 			"活跃用户": 45.2,
 			"对话次数": 38.7,
-			"总成本":   22.1,
+			"总成本":  22.1,
 		},
 	}
 
 	// 建议
-	recommendations := []string{
-		"建议优化高成本角色的使用效率",
-		"可以考虑为活跃用户提供更多高级功能",
-		"文档功能使用率较低，建议加强推广",
+	recommendations := make([]string, 0, 3)
+	if costStats.TotalCost > 100 {
+		recommendations = append(recommendations, "本周期成本较高，建议优先优化高消耗角色与长对话。")
+	}
+	if qualityStats.SatisfactionRate < 85 {
+		recommendations = append(recommendations, "满意度偏低，建议重点复盘低分会话并优化角色提示词。")
+	}
+	if totalUsers > 0 && activeUsers*100/totalUsers < 40 {
+		recommendations = append(recommendations, "活跃用户占比偏低，建议增加引导任务和首聊模板提升留存。")
+	}
+	if len(recommendations) == 0 {
+		recommendations = append(recommendations, "整体指标稳定，建议继续跟踪高价值角色与知识库使用深度。")
+	}
+
+	summary := map[string]interface{}{
+		"totalUsers":       totalUsers,
+		"activeUsers":      activeUsers,
+		"totalSessions":    totalSessions,
+		"totalMessages":    totalMessages,
+		"totalDocuments":   totalDocuments,
+		"totalCost":        costStats.TotalCost,
+		"averageRating":    qualityStats.AverageRating,
+		"satisfactionRate": qualityStats.SatisfactionRate,
 	}
 
 	return &ReportData{
-		ReportType:    reportType,
-		PeriodStart:   periodStart.Format("2006-01-02"),
-		PeriodEnd:     periodEnd.Format("2006-01-02"),
-		GeneratedAt:   time.Now().Format("2006-01-02 15:04:05"),
-		Summary:       make(map[string]interface{}),
-		KeyMetrics:    keyMetrics,
-		Trends:        trends,
-		Comparisons:   comparisons,
+		ReportType:      reportType,
+		PeriodStart:     periodStart.Format("2006-01-02"),
+		PeriodEnd:       periodEnd.Format("2006-01-02"),
+		GeneratedAt:     time.Now().Format("2006-01-02 15:04:05"),
+		Summary:         summary,
+		KeyMetrics:      keyMetrics,
+		Trends:          trends,
+		Comparisons:     comparisons,
 		Recommendations: recommendations,
+	}
+}
+
+func (h *AnalyticsHandler) renderReportMarkdown(report *ReportData) string {
+	reportName := "周报"
+	if report.ReportType == "monthly" {
+		reportName = "月报"
+	}
+
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("# RoleCraft 数据分析%s\n\n", reportName))
+	builder.WriteString(fmt.Sprintf("- 统计周期: %s ~ %s\n", report.PeriodStart, report.PeriodEnd))
+	builder.WriteString(fmt.Sprintf("- 生成时间: %s\n\n", report.GeneratedAt))
+
+	builder.WriteString("## 关键指标\n")
+	for _, metric := range report.KeyMetrics {
+		sign := ""
+		if metric.Change > 0 {
+			sign = "+"
+		}
+		builder.WriteString(fmt.Sprintf("- %s: %s%s（变化 %s%.1f%%）\n",
+			metric.Name,
+			formatMetricValue(metric.Value, metric.Unit),
+			metric.Unit,
+			sign,
+			metric.Change,
+		))
+	}
+
+	if len(report.Recommendations) > 0 {
+		builder.WriteString("\n## 建议\n")
+		for i, recommendation := range report.Recommendations {
+			builder.WriteString(fmt.Sprintf("%d. %s\n", i+1, recommendation))
+		}
+	}
+
+	return builder.String()
+}
+
+func formatMetricValue(value float64, unit string) string {
+	switch unit {
+	case "人", "次":
+		return fmt.Sprintf("%.0f", value)
+	case "元":
+		return fmt.Sprintf("%.2f", value)
+	default:
+		return fmt.Sprintf("%.1f", value)
 	}
 }

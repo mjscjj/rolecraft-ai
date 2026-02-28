@@ -46,7 +46,7 @@ export interface Message {
 interface StreamWithThinkingHandlers {
   onThinking?: (content: string) => void;
   onChunk: (chunk: string) => void;
-  onDone: () => void;
+  onDone: (assistantMessageId?: string) => void;
 }
 
 const parseSSEEventData = (eventChunk: string): any | null => {
@@ -135,7 +135,7 @@ export const chatApi = {
     sessionId: string,
     content: string,
     onChunk: (chunk: string) => void,
-    onDone: () => void,
+    onDone: (assistantMessageId?: string) => void,
     signal?: AbortSignal
   ): Promise<void> => {
     const token = localStorage.getItem('token');
@@ -160,13 +160,14 @@ export const chatApi = {
 
     const decoder = new TextDecoder();
     let buffer = '';
+    let assistantMessageId: string | undefined;
     let finished = false;
     const doneOnce = () => {
       if (finished) {
         return;
       }
       finished = true;
-      onDone();
+      onDone(assistantMessageId);
     };
 
     while (true) {
@@ -187,6 +188,9 @@ export const chatApi = {
         if (parsed.content) {
           onChunk(parsed.content);
         }
+        if (typeof parsed.assistantMessageId === 'string' && parsed.assistantMessageId !== '') {
+          assistantMessageId = parsed.assistantMessageId;
+        }
         if (parsed.done) {
           doneOnce();
         }
@@ -198,6 +202,9 @@ export const chatApi = {
       const parsed = parseSSEEventData(buffer);
       if (parsed?.content) {
         onChunk(parsed.content);
+      }
+      if (typeof parsed?.assistantMessageId === 'string' && parsed.assistantMessageId !== '') {
+        assistantMessageId = parsed.assistantMessageId;
       }
       if (parsed?.done) {
         doneOnce();
@@ -236,13 +243,14 @@ export const chatApi = {
 
     const decoder = new TextDecoder();
     let buffer = '';
+    let assistantMessageId: string | undefined;
     let finished = false;
     const doneOnce = () => {
       if (finished) {
         return;
       }
       finished = true;
-      handlers.onDone();
+      handlers.onDone(assistantMessageId);
     };
 
     while (true) {
@@ -279,6 +287,9 @@ export const chatApi = {
         if (parsed.content) {
           handlers.onChunk(parsed.content);
         }
+        if (typeof parsed.assistantMessageId === 'string' && parsed.assistantMessageId !== '') {
+          assistantMessageId = parsed.assistantMessageId;
+        }
 
         if (parsed.done || parsed.type === 'done') {
           doneOnce();
@@ -300,6 +311,9 @@ export const chatApi = {
           handlers.onChunk(parsed.content);
         } else if (parsed.content) {
           handlers.onChunk(parsed.content);
+        }
+        if (typeof parsed.assistantMessageId === 'string' && parsed.assistantMessageId !== '') {
+          assistantMessageId = parsed.assistantMessageId;
         }
         if (parsed.done || parsed.type === 'done') {
           doneOnce();

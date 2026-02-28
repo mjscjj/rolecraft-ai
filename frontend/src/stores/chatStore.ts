@@ -179,8 +179,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
             return { messages: newMessages };
           });
         },
-        () => {
-          set({ isStreaming: false, streamController: null });
+        (assistantMessageId) => {
+          set((state) => {
+            const next = [...state.messages];
+            const last = next[next.length - 1];
+            if (
+              assistantMessageId &&
+              last &&
+              last.role === 'assistant' &&
+              last.id.startsWith('ai-')
+            ) {
+              last.id = assistantMessageId;
+            }
+            return { messages: next, isStreaming: false, streamController: null };
+          });
         },
         controller.signal
       );
@@ -263,8 +275,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
               return { messages: newMessages };
             });
           },
-          onDone: () => {
-            set({ isStreaming: false, streamController: null });
+          onDone: (assistantMessageId) => {
+            set((state) => {
+              const next = [...state.messages];
+              const last = next[next.length - 1];
+              if (
+                assistantMessageId &&
+                last &&
+                last.role === 'assistant' &&
+                last.id.startsWith('ai-')
+              ) {
+                last.id = assistantMessageId;
+              }
+              return { messages: next, isStreaming: false, streamController: null };
+            });
           },
         },
         controller.signal

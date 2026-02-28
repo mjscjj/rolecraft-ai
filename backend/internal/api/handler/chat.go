@@ -1478,15 +1478,8 @@ func (h *ChatHandler) ChatStreamWithThinking(c *gin.Context) {
 	// 发送最终答案
 	sender.SendAnswer(assistantContent)
 
-	// 发送完成标记
-	jsonData, _ := json.Marshal(thinking.StreamChunk{
-		Type: "done",
-		Done: true,
-	})
-	fmt.Fprintf(c.Writer, "data: %s\n\n", jsonData)
-	flusher.Flush()
-
 	// 保存完整的助手消息
+	assistantMessageID := ""
 	if assistantContent != "" {
 		assistantMsg := models.Message{
 			ID:        models.NewUUID(),
@@ -1497,7 +1490,20 @@ func (h *ChatHandler) ChatStreamWithThinking(c *gin.Context) {
 		}
 		h.db.Create(&assistantMsg)
 		h.db.Model(&session).Update("updated_at", time.Now())
+		assistantMessageID = assistantMsg.ID
 	}
+
+	// 发送完成标记（附带真实消息 ID，便于前端替换临时 ID）
+	doneChunk := map[string]interface{}{
+		"type": "done",
+		"done": true,
+	}
+	if assistantMessageID != "" {
+		doneChunk["assistantMessageId"] = assistantMessageID
+	}
+	jsonData, _ := json.Marshal(doneChunk)
+	fmt.Fprintf(c.Writer, "data: %s\n\n", jsonData)
+	flusher.Flush()
 }
 
 // callMockAI 调用 Mock AI（当 AnythingLLM 未配置时使用）
