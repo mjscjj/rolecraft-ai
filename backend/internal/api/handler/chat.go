@@ -1328,6 +1328,12 @@ func (h *ChatHandler) RateMessage(c *gin.Context) {
 	metadata["ratedBy"] = userID
 	metadata["ratedAt"] = time.Now().Unix()
 
+	if req.Rating == "up" {
+		msg.Likes++
+	} else {
+		msg.Dislikes++
+	}
+
 	metadataJSON, _ := json.Marshal(metadata)
 	msg.Sources = models.JSON(metadataJSON)
 	h.db.Save(&msg)

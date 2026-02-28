@@ -298,6 +298,70 @@ func TestRegenerateMessage(t *testing.T) {
 	})
 }
 
+func TestRateMessage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupTestDB(t)
+	cfg := &config.Config{}
+	chatHandler := handler.NewChatHandler(db, cfg)
+
+	user := models.User{ID: "rate-user", Email: "rate@example.com", PasswordHash: "hashed"}
+	db.Create(&user)
+
+	session := models.ChatSession{ID: "rate-session", UserID: user.ID, Title: "Rate Session"}
+	db.Create(&session)
+
+	msg := models.Message{
+		ID:        "rate-msg",
+		SessionID: session.ID,
+		Role:      "assistant",
+		Content:   "test",
+	}
+	db.Create(&msg)
+
+	t.Run("rate up increments likes", func(t *testing.T) {
+		reqBody := map[string]string{"rating": "up"}
+		body, _ := json.Marshal(reqBody)
+		req, _ := http.NewRequest("POST", "/api/v1/chat/messages/"+msg.ID+"/rate", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		w := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(w)
+		ctx.Request = req
+		ctx.Set("userId", user.ID)
+		ctx.Params = []gin.Param{{Key: "msgId", Value: msg.ID}}
+
+		chatHandler.RateMessage(ctx)
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var updated models.Message
+		db.First(&updated, "id = ?", msg.ID)
+		assert.Equal(t, 1, updated.Likes)
+		assert.Equal(t, 0, updated.Dislikes)
+	})
+
+	t.Run("rate down increments dislikes", func(t *testing.T) {
+		reqBody := map[string]string{"rating": "down"}
+		body, _ := json.Marshal(reqBody)
+		req, _ := http.NewRequest("POST", "/api/v1/chat/messages/"+msg.ID+"/rate", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		w := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(w)
+		ctx.Request = req
+		ctx.Set("userId", user.ID)
+		ctx.Params = []gin.Param{{Key: "msgId", Value: msg.ID}}
+
+		chatHandler.RateMessage(ctx)
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var updated models.Message
+		db.First(&updated, "id = ?", msg.ID)
+		assert.Equal(t, 1, updated.Likes)
+		assert.Equal(t, 1, updated.Dislikes)
+	})
+}
+
 // setupTestDB 创建测试数据库
 func setupTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
