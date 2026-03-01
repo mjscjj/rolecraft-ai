@@ -12,7 +12,7 @@ import (
 
 // TestNewAnythingLLMClient tests client initialization
 func TestNewAnythingLLMClient(t *testing.T) {
-	baseURL := "http://localhost:3001/api"
+	baseURL := "http://localhost:3001/api/v1"
 	apiKey := "test-api-key"
 	
 	client := NewAnythingLLMClient(baseURL, apiKey)
@@ -28,7 +28,7 @@ func TestNewAnythingLLMClient(t *testing.T) {
 
 // TestGetWorkspaceSlug tests workspace slug generation
 func TestGetWorkspaceSlug(t *testing.T) {
-	client := NewAnythingLLMClient("http://localhost:3001/api", "test-key")
+	client := NewAnythingLLMClient("http://localhost:3001/api/v1", "test-key")
 	
 	testCases := []struct {
 		userId   string
@@ -61,8 +61,8 @@ func TestCreateWorkspace(t *testing.T) {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
 		
-		if r.URL.Path != "/api/workspace/new" {
-			t.Errorf("expected path /api/workspace/new, got %s", r.URL.Path)
+		if r.URL.Path != "/api/v1/workspace/new" {
+			t.Errorf("expected path /api/v1/workspace/new, got %s", r.URL.Path)
 		}
 		
 		auth := r.Header.Get("Authorization")
@@ -86,7 +86,7 @@ func TestCreateWorkspace(t *testing.T) {
 	}))
 	defer server.Close()
 	
-	client := NewAnythingLLMClient(server.URL+"/api", "test-api-key")
+	client := NewAnythingLLMClient(server.URL+"/api/v1", "test-api-key")
 	
 	workspace, err := client.CreateWorkspace("123", "Test Workspace", "Test system prompt")
 	if err != nil {
@@ -113,7 +113,7 @@ func TestCreateWorkspaceError(t *testing.T) {
 	}))
 	defer server.Close()
 	
-	client := NewAnythingLLMClient(server.URL+"/api", "test-api-key")
+	client := NewAnythingLLMClient(server.URL+"/api/v1", "test-api-key")
 	
 	_, err := client.CreateWorkspace("123", "Test Workspace", "")
 	if err == nil {
@@ -139,8 +139,8 @@ func TestGetWorkspace(t *testing.T) {
 			t.Errorf("expected GET, got %s", r.Method)
 		}
 		
-		if r.URL.Path != "/api/workspace/user_123" {
-			t.Errorf("expected path /api/workspace/user_123, got %s", r.URL.Path)
+		if r.URL.Path != "/api/v1/workspace/user_123" {
+			t.Errorf("expected path /api/v1/workspace/user_123, got %s", r.URL.Path)
 		}
 		
 		w.Header().Set("Content-Type", "application/json")
@@ -150,7 +150,7 @@ func TestGetWorkspace(t *testing.T) {
 	}))
 	defer server.Close()
 	
-	client := NewAnythingLLMClient(server.URL+"/api", "test-api-key")
+	client := NewAnythingLLMClient(server.URL+"/api/v1", "test-api-key")
 	
 	workspace, err := client.GetWorkspace("123")
 	if err != nil {
@@ -173,7 +173,7 @@ func TestGetWorkspaceNotFound(t *testing.T) {
 	}))
 	defer server.Close()
 	
-	client := NewAnythingLLMClient(server.URL+"/api", "test-api-key")
+	client := NewAnythingLLMClient(server.URL+"/api/v1", "test-api-key")
 	
 	_, err := client.GetWorkspace("999")
 	if err == nil {
@@ -204,7 +204,7 @@ func TestChat(t *testing.T) {
 	}))
 	defer server.Close()
 	
-	client := NewAnythingLLMClient(server.URL+"/api", "test-api-key")
+	client := NewAnythingLLMClient(server.URL+"/api/v1", "test-api-key")
 	
 	response, err := client.Chat("123", "Hello", "chat")
 	if err != nil {
@@ -235,7 +235,7 @@ func TestStreamChat(t *testing.T) {
 	}))
 	defer server.Close()
 	
-	client := NewAnythingLLMClient(server.URL+"/api", "test-api-key")
+	client := NewAnythingLLMClient(server.URL+"/api/v1", "test-api-key")
 	
 	var received []string
 	callback := func(chunk string) {
@@ -272,7 +272,7 @@ func TestUploadDocument(t *testing.T) {
 	}))
 	defer server.Close()
 	
-	client := NewAnythingLLMClient(server.URL+"/api", "test-api-key")
+	client := NewAnythingLLMClient(server.URL+"/api/v1", "test-api-key")
 	
 	fileData := []byte("test content")
 	response, err := client.UploadDocument("123", "test.pdf", fileData)
@@ -300,7 +300,7 @@ func TestGetDocuments(t *testing.T) {
 	}))
 	defer server.Close()
 	
-	client := NewAnythingLLMClient(server.URL+"/api", "test-api-key")
+	client := NewAnythingLLMClient(server.URL+"/api/v1", "test-api-key")
 	
 	docs, err := client.GetDocuments("123")
 	if err != nil {
@@ -326,7 +326,7 @@ func TestDeleteDocument(t *testing.T) {
 	}))
 	defer server.Close()
 	
-	client := NewAnythingLLMClient(server.URL+"/api", "test-api-key")
+	client := NewAnythingLLMClient(server.URL+"/api/v1", "test-api-key")
 	
 	err := client.DeleteDocument("123", "doc-hash-123")
 	if err != nil {
@@ -362,7 +362,7 @@ func TestVectorSearch(t *testing.T) {
 	}))
 	defer server.Close()
 	
-	client := NewAnythingLLMClient(server.URL+"/api", "test-api-key")
+	client := NewAnythingLLMClient(server.URL+"/api/v1", "test-api-key")
 	
 	results, err := client.VectorSearch("123", "test query", 5)
 	if err != nil {
@@ -393,7 +393,7 @@ func TestGetChatHistory(t *testing.T) {
 	}))
 	defer server.Close()
 	
-	client := NewAnythingLLMClient(server.URL+"/api", "test-api-key")
+	client := NewAnythingLLMClient(server.URL+"/api/v1", "test-api-key")
 	
 	history, err := client.GetChatHistory("123", 10)
 	if err != nil {
@@ -423,7 +423,7 @@ func TestRetryLogic(t *testing.T) {
 	}))
 	defer server.Close()
 	
-	client := NewAnythingLLMClient(server.URL+"/api", "test-api-key")
+	client := NewAnythingLLMClient(server.URL+"/api/v1", "test-api-key")
 	
 	_, err := client.GetWorkspace("123")
 	if err != nil {
@@ -446,7 +446,7 @@ func TestContextCancellation(t *testing.T) {
 	}))
 	defer server.Close()
 	
-	client := NewAnythingLLMClient(server.URL+"/api", "test-api-key")
+	client := NewAnythingLLMClient(server.URL+"/api/v1", "test-api-key")
 	
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -465,7 +465,7 @@ func TestInvalidJSON(t *testing.T) {
 	}))
 	defer server.Close()
 	
-	client := NewAnythingLLMClient(server.URL+"/api", "test-api-key")
+	client := NewAnythingLLMClient(server.URL+"/api/v1", "test-api-key")
 	
 	_, err := client.GetWorkspace("123")
 	if err == nil {
@@ -480,7 +480,7 @@ func TestInvalidJSON(t *testing.T) {
 // TestBaseURLTrailingSlash tests that trailing slashes are handled correctly
 func TestBaseURLTrailingSlash(t *testing.T) {
 	client1 := NewAnythingLLMClient("http://localhost:3001/api/", "key")
-	client2 := NewAnythingLLMClient("http://localhost:3001/api", "key")
+	client2 := NewAnythingLLMClient("http://localhost:3001/api/v1", "key")
 	
 	if client1.BaseURL != client2.BaseURL {
 		t.Errorf("expected same BaseURL, got %s vs %s", client1.BaseURL, client2.BaseURL)

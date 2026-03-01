@@ -1,5 +1,37 @@
 # RoleCraft AI - 技术架构设计
 
+## 0. 模块重设计（2026-03，MVP）
+
+围绕以下 4 个核心模块进行产品和技术结构统一：
+
+1. `对话`：同步协作入口，支持 `chat` / `agent` 双模式。
+2. `我的公司`：总结果交付区，聚合角色与工作区产出。
+3. `角色市场`：模板能力供给中心，支持安装到个人或公司。
+4. `工作区`：异步执行中心，负责“何时做什么”和结果沉淀。
+
+### 0.1 核心实体关系
+
+- `RoleMarketTemplate -> RoleInstall -> Role`
+- `Role -> ChatSession -> Message`
+- `Role + Company -> WorkspaceTask(Work)`
+- `WorkspaceTask(Work) -> ResultSummary -> Company Delivery`
+
+### 0.2 工作区（Work）关键字段
+
+- `type`: `general|report|analyze`
+- `triggerType`: `manual|once|daily|interval_hours`
+- `triggerValue`: 调度参数（如 `09:00`、`4`、RFC3339）
+- `timezone`, `nextRunAt`, `lastRunAt`
+- `asyncStatus`: `idle|scheduled|running|completed|failed`
+- `inputSource`, `reportRule`, `resultSummary`, `config`
+
+### 0.3 API 路由策略
+
+- 新主路由：`/api/v1/workspaces`（含 `/:id/run`）
+- 兼容旧路由：`/api/v1/works`（同 handler）
+
+---
+
 ## 1. 系统架构概览
 
 ```
@@ -462,3 +494,35 @@ volumes:
 [INFO]  2024-01-20 10:00:00 | request_id: xxx | user_id: xxx | method: POST | path: /api/v1/chat | duration: 1.2s
 [ERROR] 2024-01-20 10:00:01 | request_id: xxx | error: failed to connect to AI service
 ```
+
+## 10. V2 领域重构（MVP）
+
+### 10.1 核心实体
+- `RoleMarketTemplate`：角色市场模板（当前由 `/roles/templates` 提供）
+- `Role`：已安装可执行角色，支持归属到 `userId` 或 `companyId`
+- `Company`：公司空间（MVP 为 owner 单管理员模型）
+- `Work`：工作项，支持绑定 `companyId`、`roleId`
+- `Document`：知识库文档，新增 `companyId/workId` 归属
+- `RoleInstall`：市场安装记录，追踪模板安装目标
+
+### 10.2 关键流程
+1. 角色安装：`Template -> /roles/templates/:id/install -> Role + RoleInstall`
+2. 公司协作：`Company -> Company Roles + Works + Documents`
+3. 工作执行：`Work(roleId) -> ChatSession(roleId) -> AnythingLLM`
+4. 知识挂接：`Document(companyId/workId) -> 检索过滤 -> 对话上下文`
+
+### 10.3 新增 API
+- `GET/POST/GET:id/PUT:id/DELETE:id /companies`
+- `GET/POST/PUT:id/DELETE:id /works`
+- `POST /roles/templates/:id/install`
+- `GET /documents?companyId=&workId=`
+- `POST /documents` 支持 `companyId/workId` 表单字段
+
+### 10.4 数据结构补充
+- `roles.company_id`：公司角色归属
+- `documents.company_id/work_id`：知识文档归属
+- `role_installs`：安装审计与追踪
+
+### 10.5 MVP 边界
+- 公司模型当前不含多成员 RBAC，后续可扩展 `company_members`。
+- 角色市场当前为内置模板源，后续可升级为数据库市场。

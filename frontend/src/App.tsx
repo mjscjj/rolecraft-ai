@@ -16,6 +16,8 @@ const RoleMarket = lazy(() => import('./pages/RoleMarket').then((m) => ({ defaul
 const KnowledgeBase = lazy(() => import('./pages/KnowledgeBase').then((m) => ({ default: m.KnowledgeBase })));
 const Analytics = lazy(() => import('./pages/Analytics').then((m) => ({ default: m.Analytics })));
 const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
+const CompanyPage = lazy(() => import('./pages/Company'));
+const WorkspacePage = lazy(() => import('./pages/Workspace'));
 
 const AppLoading = () => (
   <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: '#64748b' }}>
@@ -57,6 +59,9 @@ const App = () => {
             <Route path="/roles/create" element={<RoleEditor />} />
             <Route path="/roles/:id/edit" element={<RoleEditor />} />
             <Route path="/documents" element={<KnowledgeBase />} />
+            <Route path="/companies" element={<CompanyPage />} />
+            <Route path="/workspaces" element={<WorkspacePage />} />
+            <Route path="/works" element={<WorkspacePage />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/settings" element={<Settings />} />
           </Route>

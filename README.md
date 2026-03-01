@@ -23,6 +23,7 @@ RoleCraft AI 是一个企业级 AI 角色管理平台，让用户能够创建、
 - 📖 [完整文档中心](./docs/README.md)
 - 🚀 [快速开始指南](./docs/user/quickstart.md)
 - 📡 [API 参考文档](./docs/technical/api-reference.md)
+- 🧭 [模块重设计说明（2026-03）](./docs/technical/module-redesign-2026-03.md)
 - 💰 [定价说明](./docs/marketing/pricing.md)
 
 ---
@@ -42,6 +43,7 @@ RoleCraft AI 是一个企业级 AI 角色管理平台，让用户能够创建、
 - 🏗️ [开发环境配置](./docs/technical/dev-setup.md) - 本地开发搭建
 - 🗄️ [数据库设计文档](./docs/technical/database-design.md) - 数据模型
 - 🏛️ [系统架构图](./docs/technical/architecture.md) - 技术架构
+- 🧭 [模块重设计（对话/我的公司/角色市场/工作区）](./docs/technical/module-redesign-2026-03.md)
 
 ### 开发者文档 💻
 - 🤝 [贡献指南](./docs/developer/contributing.md) - 参与项目开发
@@ -61,27 +63,32 @@ RoleCraft AI 是一个企业级 AI 角色管理平台，让用户能够创建、
 
 ## ✨ 核心功能
 
-### 1. 空间管理 (Workspace)
-- 个人空间与企业/项目空间
-- 成员邀请与权限管理
-- 资源隔离
+### 1. 对话 (Chat + Agent)
+- **Chat 模式** - 即时问答与多轮交流
+- **Agent 模式** - 深度执行、可结合联网搜索
+- 流式输出、会话历史、消息来源追踪
 
-### 2. 角色中心 (Role Center)
-- **角色市场** - 8+ 内置角色模板
-- **角色编辑器** - 可视化配置提示词、技能、知识库
-- **角色管理** - CRUD、克隆、分享
+### 2. 我的公司 (Delivery Hub)
+- 公司级角色管理与自定义
+- 聚合查看工作区任务成果
+- 作为总交付区统一沉淀项目结果
 
-### 3. 知识库 (Knowledge Base)
+### 3. 角色市场 (Role Market)
+- 8+ 内置模板角色
+- 一键安装到个人或公司
+- 安装后可直接进入对话或绑定到工作区
+
+### 4. 工作区 (Async Workspace)
+- 异步任务调度中心（由“工作”升级）
+- 支持 `手动 / 定时一次 / 每日定时 / 每 N 小时`
+- 支持“XX 点做事 / XX 点汇报 / XX 点分析文件”场景
+
+### 5. 知识库 (Knowledge Base)
 - 支持 PDF、Word、TXT、Markdown 等格式
 - 自动文本提取与向量化
 - 智能检索与引用（准确率 > 90%）
 
-### 4. 对话服务 (Chat Service)
-- **快速问答** - 即时响应（< 500ms）
-- **任务模式** - 多轮深度对话（50 条上下文）
-- 流式输出、历史记录、快捷命令
-
-### 5. API 平台
+### 6. API 平台
 - API 密钥管理
 - RESTful API 接口
 - 用量统计和监控

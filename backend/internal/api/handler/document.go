@@ -1,16 +1,21 @@
 package handler
 
 import (
+	"archive/zip"
 	"bytes"
 	"crypto/sha256"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,6 +81,9 @@ func normalizeAnythingLLMBaseURL(raw string) string {
 	if strings.HasSuffix(base, "/api/v1") {
 		return base
 	}
+	if strings.HasSuffix(base, "/api") {
+		return base + "/v1"
+	}
 	return base + "/api/v1"
 }
 
@@ -87,6 +95,11 @@ var allowedTypes = map[string]bool{
 	".pdf":  true,
 	".doc":  true,
 	".docx": true,
+	".xls":  true,
+	".xlsx": true,
+	".ppt":  true,
+	".pptx": true,
+	".csv":  true,
 	".txt":  true,
 	".md":   true,
 }
@@ -109,6 +122,12 @@ func (h *DocumentHandler) List(c *gin.Context) {
 
 	if folderID := c.Query("folder"); folderID != "" {
 		query = query.Where("folder_id = ?", folderID)
+	}
+	if companyID := c.Query("companyId"); companyID != "" {
+		query = query.Where("company_id = ?", companyID)
+	}
+	if workID := c.Query("workId"); workID != "" {
+		query = query.Where("work_id = ?", workID)
 	}
 
 	// 日期范围过滤
@@ -146,6 +165,8 @@ func (h *DocumentHandler) Upload(c *gin.Context) {
 
 	// 获取文件夹 ID (可选)
 	folderID := c.PostForm("folderId")
+	companyID := c.PostForm("companyId")
+	workID := c.PostForm("workId")
 
 	// 支持多文件上传
 	form, err := c.MultipartForm()
@@ -169,7 +190,7 @@ func (h *DocumentHandler) Upload(c *gin.Context) {
 	var uploadedDocs []models.Document
 
 	for _, fileHeader := range files {
-		doc, err := h.processSingleFile(fileHeader, userIdStr, folderID)
+		doc, err := h.processSingleFile(fileHeader, userIdStr, folderID, companyID, workID)
 		if err != nil {
 			continue // 跳过失败的文件
 		}
@@ -198,7 +219,7 @@ func (h *DocumentHandler) Upload(c *gin.Context) {
 }
 
 // processSingleFile 处理单个文件上传
-func (h *DocumentHandler) processSingleFile(fileHeader *multipart.FileHeader, userIdStr, folderID string) (*models.Document, error) {
+func (h *DocumentHandler) processSingleFile(fileHeader *multipart.FileHeader, userIdStr, folderID, companyID, workID string) (*models.Document, error) {
 	file, err := fileHeader.Open()
 	if err != nil {
 		return nil, err
@@ -235,6 +256,8 @@ func (h *DocumentHandler) processSingleFile(fileHeader *multipart.FileHeader, us
 	document := models.Document{
 		ID:        fileId,
 		UserID:    userIdStr,
+		CompanyID: companyID,
+		WorkID:    workID,
 		Name:      fileHeader.Filename,
 		FileType:  ext[1:],
 		FilePath:  tempFilePath,
@@ -1006,6 +1029,242 @@ func (h *DocumentHandler) BatchUpdateTags(c *gin.Context) {
 	})
 }
 
+type sharedStringsXML struct {
+	SI []struct {
+		T string `xml:"t"`
+		R []struct {
+			T string `xml:"t"`
+		} `xml:"r"`
+	} `xml:"si"`
+}
+
+type worksheetXML struct {
+	Rows []struct {
+		Cells []struct {
+			T  string `xml:"t,attr"`
+			V  string `xml:"v"`
+			IS struct {
+				T string `xml:"t"`
+			} `xml:"is"`
+		} `xml:"c"`
+	} `xml:"sheetData>row"`
+}
+
+func truncatePreviewText(text string) string {
+	const maxRunes = 12000
+	runes := []rune(text)
+	if len(runes) <= maxRunes {
+		return text
+	}
+	return string(runes[:maxRunes]) + "\n\n...（预览已截断）"
+}
+
+func readZipEntryContent(zr *zip.ReadCloser, name string) ([]byte, error) {
+	for _, f := range zr.File {
+		if f.Name != name {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return nil, err
+		}
+		defer rc.Close()
+		return io.ReadAll(rc)
+	}
+	return nil, fmt.Errorf("zip entry not found: %s", name)
+}
+
+func extractXMLText(raw []byte) string {
+	decoder := xml.NewDecoder(bytes.NewReader(raw))
+	var parts []string
+	for {
+		tok, err := decoder.Token()
+		if err != nil {
+			break
+		}
+		charData, ok := tok.(xml.CharData)
+		if !ok {
+			continue
+		}
+		fragment := strings.TrimSpace(string(charData))
+		if fragment != "" {
+			parts = append(parts, fragment)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func parseSharedStrings(raw []byte) []string {
+	var sst sharedStringsXML
+	if err := xml.Unmarshal(raw, &sst); err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(sst.SI))
+	for _, si := range sst.SI {
+		if si.T != "" {
+			out = append(out, strings.TrimSpace(si.T))
+			continue
+		}
+		var runParts []string
+		for _, r := range si.R {
+			if strings.TrimSpace(r.T) != "" {
+				runParts = append(runParts, strings.TrimSpace(r.T))
+			}
+		}
+		out = append(out, strings.Join(runParts, ""))
+	}
+	return out
+}
+
+func parseWorksheetPreview(raw []byte, sharedStrings []string) string {
+	var ws worksheetXML
+	if err := xml.Unmarshal(raw, &ws); err != nil {
+		return extractXMLText(raw)
+	}
+
+	lines := make([]string, 0, len(ws.Rows))
+	for _, row := range ws.Rows {
+		cells := make([]string, 0, len(row.Cells))
+		for _, cell := range row.Cells {
+			value := strings.TrimSpace(cell.V)
+			if cell.T == "inlineStr" && strings.TrimSpace(cell.IS.T) != "" {
+				value = strings.TrimSpace(cell.IS.T)
+			}
+			if cell.T == "s" && value != "" {
+				if idx, err := strconv.Atoi(value); err == nil && idx >= 0 && idx < len(sharedStrings) {
+					value = sharedStrings[idx]
+				}
+			}
+			if value != "" {
+				cells = append(cells, value)
+			}
+		}
+		if len(cells) > 0 {
+			lines = append(lines, strings.Join(cells, " | "))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (h *DocumentHandler) extractPreviewContent(document models.Document) (string, error) {
+	if document.FilePath == "" {
+		return "", fmt.Errorf("file not found")
+	}
+
+	switch document.FileType {
+	case "txt", "md":
+		content, err := os.ReadFile(document.FilePath)
+		if err != nil {
+			return "", err
+		}
+		return truncatePreviewText(string(content)), nil
+	case "csv":
+		file, err := os.Open(document.FilePath)
+		if err != nil {
+			return "", err
+		}
+		defer file.Close()
+		reader := csv.NewReader(file)
+		rows, err := reader.ReadAll()
+		if err != nil {
+			return "", err
+		}
+		var lines []string
+		for _, row := range rows {
+			lines = append(lines, strings.Join(row, " | "))
+		}
+		return truncatePreviewText(strings.Join(lines, "\n")), nil
+	case "docx":
+		zr, err := zip.OpenReader(document.FilePath)
+		if err != nil {
+			return "", err
+		}
+		defer zr.Close()
+		raw, err := readZipEntryContent(zr, "word/document.xml")
+		if err != nil {
+			return "", err
+		}
+		return truncatePreviewText(extractXMLText(raw)), nil
+	case "xlsx":
+		zr, err := zip.OpenReader(document.FilePath)
+		if err != nil {
+			return "", err
+		}
+		defer zr.Close()
+
+		shared := []string{}
+		if raw, err := readZipEntryContent(zr, "xl/sharedStrings.xml"); err == nil {
+			shared = parseSharedStrings(raw)
+		}
+
+		var sheetNames []string
+		for _, f := range zr.File {
+			if strings.HasPrefix(f.Name, "xl/worksheets/") && strings.HasSuffix(f.Name, ".xml") {
+				sheetNames = append(sheetNames, f.Name)
+			}
+		}
+		sort.Strings(sheetNames)
+		if len(sheetNames) == 0 {
+			return "表格中未发现可预览内容。", nil
+		}
+
+		var sections []string
+		for idx, name := range sheetNames {
+			raw, err := readZipEntryContent(zr, name)
+			if err != nil {
+				continue
+			}
+			body := strings.TrimSpace(parseWorksheetPreview(raw, shared))
+			if body == "" {
+				continue
+			}
+			sections = append(sections, fmt.Sprintf("工作表 %d\n%s", idx+1, body))
+		}
+		if len(sections) == 0 {
+			return "表格中未发现可预览内容。", nil
+		}
+		return truncatePreviewText(strings.Join(sections, "\n\n")), nil
+	case "pptx":
+		zr, err := zip.OpenReader(document.FilePath)
+		if err != nil {
+			return "", err
+		}
+		defer zr.Close()
+
+		var slideNames []string
+		for _, f := range zr.File {
+			if strings.HasPrefix(f.Name, "ppt/slides/slide") && strings.HasSuffix(f.Name, ".xml") {
+				slideNames = append(slideNames, f.Name)
+			}
+		}
+		sort.Strings(slideNames)
+		if len(slideNames) == 0 {
+			return "演示文稿中未发现可预览内容。", nil
+		}
+
+		var slides []string
+		for idx, name := range slideNames {
+			raw, err := readZipEntryContent(zr, name)
+			if err != nil {
+				continue
+			}
+			body := strings.TrimSpace(extractXMLText(raw))
+			if body == "" {
+				continue
+			}
+			slides = append(slides, fmt.Sprintf("第 %d 页\n%s", idx+1, body))
+		}
+		if len(slides) == 0 {
+			return "演示文稿中未发现可预览内容。", nil
+		}
+		return truncatePreviewText(strings.Join(slides, "\n\n")), nil
+	case "doc", "xls", "ppt":
+		return "该旧版 Office 格式暂不支持在线解析，请下载后查看，建议转换为 docx/xlsx/pptx。", nil
+	default:
+		return "", fmt.Errorf("preview not supported for this file type")
+	}
+}
+
 // Preview 预览文档内容
 func (h *DocumentHandler) Preview(c *gin.Context) {
 	userId, exists := c.Get("userId")
@@ -1036,24 +1295,19 @@ func (h *DocumentHandler) Preview(c *gin.Context) {
 		} else {
 			c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
 		}
-	case "txt", "md":
-		// 文本文件返回内容
-		if document.FilePath != "" {
-			content, err := os.ReadFile(document.FilePath)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read file"})
-				return
-			}
-			c.JSON(http.StatusOK, gin.H{
-				"code":    200,
-				"message": "success",
-				"data": gin.H{
-					"content": string(content),
-				},
-			})
-		} else {
-			c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
+	case "txt", "md", "csv", "doc", "docx", "xls", "xlsx", "ppt", "pptx":
+		content, err := h.extractPreviewContent(document)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse file content"})
+			return
 		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":    200,
+			"message": "success",
+			"data": gin.H{
+				"content": content,
+			},
+		})
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "preview not supported for this file type"})
 	}

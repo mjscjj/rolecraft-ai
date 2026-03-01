@@ -13,7 +13,8 @@
 5. [对话 API](#5-对话-api)
 6. [文档 API](#6-文档-api)
 7. [分析 API](#7-分析-api)
-8. [错误处理](#8-错误处理)
+8. [公司与工作区 API（MVP）](#8-公司与工作区-apimvp)
+9. [错误处理](#9-错误处理)
 
 ---
 
@@ -763,7 +764,77 @@ Authorization: Bearer <token>
 
 ---
 
-## 8. 错误处理
+## 8. 公司与工作区 API（MVP）
+
+> 2026-03 新增，支持“工作区”异步任务和公司成果交付聚合。
+
+### 8.1 获取公司列表
+
+```http
+GET /api/v1/companies
+Authorization: Bearer <token>
+```
+
+### 8.2 获取公司详情（含聚合成果）
+
+```http
+GET /api/v1/companies/:id
+Authorization: Bearer <token>
+```
+
+响应中包含：
+
+- `stats.workspaceCount`
+- `stats.outcomeCount`
+- `recentOutcomes[]`
+
+### 8.3 工作区任务列表
+
+```http
+GET /api/v1/workspaces?companyId=&status=&triggerType=&asyncStatus=
+Authorization: Bearer <token>
+```
+
+### 8.4 创建工作区任务
+
+```http
+POST /api/v1/workspaces
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "name": "每天 09:00 生成运营汇报",
+  "companyId": "xxx",
+  "type": "report",
+  "triggerType": "daily",
+  "triggerValue": "09:00",
+  "timezone": "Asia/Shanghai",
+  "reportRule": "汇总昨日数据并输出摘要"
+}
+```
+
+### 8.5 更新工作区任务
+
+```http
+PUT /api/v1/workspaces/:id
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+### 8.6 立即执行任务（MVP）
+
+```http
+POST /api/v1/workspaces/:id/run
+Authorization: Bearer <token>
+```
+
+### 8.7 兼容旧路径
+
+- `/api/v1/works` 与 `/api/v1/workspaces` 等价（向后兼容）
+
+---
+
+## 9. 错误处理
 
 ### 8.1 错误响应格式
 

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ChatSession, Message } from '../api/chat';
+import type { ChatSession, Message, MessageMeta } from '../api/chat';
 import { chatApi } from '../api/chat';
 
 interface ChatState {
@@ -10,6 +10,7 @@ interface ChatState {
   isStreaming: boolean;
   thinkingSteps: string[];
   lastStreamContent: string | null;
+  lastStreamAttachments: string[];
   lastStreamMode: 'normal' | 'deep';
   streamController: AbortController | null;
   error: string | null;
@@ -23,9 +24,9 @@ interface ChatState {
     modelConfig?: Record<string, any>
   ) => Promise<ChatSession>;
   fetchSession: (id: string) => Promise<void>;
-  sendMessage: (content: string) => Promise<void>;
-  sendStreamMessage: (content: string) => Promise<void>;
-  sendStreamMessageWithThinking: (content: string) => Promise<void>;
+  sendMessage: (content: string, attachments?: string[]) => Promise<void>;
+  sendStreamMessage: (content: string, attachments?: string[]) => Promise<void>;
+  sendStreamMessageWithThinking: (content: string, attachments?: string[]) => Promise<void>;
   updateSessionConfig: (modelConfig: Record<string, any>) => Promise<void>;
   cancelStream: () => void;
   retryLastStream: () => Promise<void>;
@@ -43,6 +44,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isStreaming: false,
   thinkingSteps: [],
   lastStreamContent: null,
+  lastStreamAttachments: [],
   lastStreamMode: 'normal',
   error: null,
   streamController: null as AbortController | null,
@@ -100,7 +102,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  sendMessage: async (content) => {
+  sendMessage: async (content, attachments = []) => {
     const { currentSession, messages } = get();
     if (!currentSession) return;
 
@@ -117,7 +119,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ messages: [...messages, tempUserMsg] });
 
     try {
-      const { assistantMessage } = await chatApi.sendMessage(currentSession.id, content);
+      const { assistantMessage } = await chatApi.sendMessage(currentSession.id, content, attachments);
       set((state) => ({
         messages: [...state.messages.slice(0, -1), tempUserMsg, assistantMessage],
         isLoading: false,
@@ -130,7 +132,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  sendStreamMessage: async (content) => {
+  sendStreamMessage: async (content, attachments = []) => {
     const { currentSession, messages } = get();
     if (!currentSession) return;
 
@@ -139,6 +141,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isStreaming: true,
       error: null,
       lastStreamContent: content,
+      lastStreamAttachments: attachments,
       lastStreamMode: 'normal',
       thinkingSteps: [],
       streamController: controller,
@@ -168,6 +171,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await chatApi.streamMessage(
         currentSession.id,
         content,
+        attachments,
         (chunk) => {
           // 追加内容
           set((state) => {
@@ -179,7 +183,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             return { messages: newMessages };
           });
         },
-        (assistantMessageId) => {
+        (assistantMessageId, meta?: MessageMeta) => {
           set((state) => {
             const next = [...state.messages];
             const last = next[next.length - 1];
@@ -190,6 +194,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
               last.id.startsWith('ai-')
             ) {
               last.id = assistantMessageId;
+            }
+            if (meta && last && last.role === 'assistant') {
+              last.sources = meta;
             }
             return { messages: next, isStreaming: false, streamController: null };
           });
@@ -225,7 +232,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  sendStreamMessageWithThinking: async (content) => {
+  sendStreamMessageWithThinking: async (content, attachments = []) => {
     const { currentSession, messages } = get();
     if (!currentSession) return;
 
@@ -234,6 +241,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isStreaming: true,
       error: null,
       lastStreamContent: content,
+      lastStreamAttachments: attachments,
       lastStreamMode: 'deep',
       thinkingSteps: [],
       streamController: controller,
@@ -261,6 +269,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await chatApi.streamMessageWithThinking(
         currentSession.id,
         content,
+        attachments,
         {
           onThinking: (stepContent) => {
             set((state) => ({ thinkingSteps: [...state.thinkingSteps, stepContent] }));
@@ -275,10 +284,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
               return { messages: newMessages };
             });
           },
-          onDone: (assistantMessageId) => {
+          onDone: (assistantMessageId, meta?: MessageMeta) => {
             set((state) => {
               const next = [...state.messages];
               const last = next[next.length - 1];
+              const resolvedMeta: MessageMeta = meta || { mode: 'agent' };
               if (
                 assistantMessageId &&
                 last &&
@@ -286,6 +296,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 last.id.startsWith('ai-')
               ) {
                 last.id = assistantMessageId;
+              }
+              if (last && last.role === 'assistant') {
+                last.sources = resolvedMeta;
               }
               return { messages: next, isStreaming: false, streamController: null };
             });
@@ -352,13 +365,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   retryLastStream: async () => {
-    const { lastStreamContent, lastStreamMode } = get();
+    const { lastStreamContent, lastStreamAttachments, lastStreamMode } = get();
     if (!lastStreamContent) return;
     if (lastStreamMode === 'deep') {
-      await get().sendStreamMessageWithThinking(lastStreamContent);
+      await get().sendStreamMessageWithThinking(lastStreamContent, lastStreamAttachments);
       return;
     }
-    await get().sendStreamMessage(lastStreamContent);
+    await get().sendStreamMessage(lastStreamContent, lastStreamAttachments);
   },
 
   appendMessage: (message) => {

@@ -372,7 +372,21 @@ export const Chat = () => {
                   <>
                     <div className="text-sm whitespace-pre-wrap">
                       {message.role === 'assistant' ? (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            a: ({ href, children }) => (
+                              <a
+                                href={href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 underline break-all"
+                              >
+                                {children}
+                              </a>
+                            ),
+                          }}
+                        >
                           {message.content}
                         </ReactMarkdown>
                       ) : (
@@ -483,6 +497,24 @@ export const Chat = () => {
           按 Enter 发送，Shift+Enter 换行
         </p>
       </div>
-    </div>
+      </div>
+
+      {showThinking && thinkingProcess && (
+        <div className="mt-4">
+          <ThinkingDisplay
+            thinkingProcess={thinkingProcess}
+            isStreaming={loading}
+            defaultExpanded
+          />
+        </div>
+      )}
+
+      <ChatHistory
+        isOpen={showHistory}
+        onClose={() => setShowHistory(false)}
+        currentSessionId={sessionId}
+        onSelectSession={handleSelectSession}
+      />
+    </>
   );
 };

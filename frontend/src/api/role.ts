@@ -4,6 +4,8 @@ import client, { handleApiError } from './client';
 // 角色类型
 export interface Role {
   id: string;
+  userId?: string;
+  companyId?: string;
   name: string;
   description: string;
   avatar?: string;
@@ -21,9 +23,16 @@ export interface CreateRoleRequest {
   name: string;
   description?: string;
   category?: string;
+  companyId?: string;
   systemPrompt: string;
   welcomeMessage?: string;
   modelConfig?: Record<string, any>;
+}
+
+export interface InstallRoleRequest {
+  targetType?: 'personal' | 'company';
+  companyId?: string;
+  name?: string;
 }
 
 // 角色 API
@@ -32,6 +41,8 @@ export const roleApi = {
   list: async (params?: {
     category?: string;
     template?: boolean;
+    companyId?: string;
+    public?: boolean;
   }): Promise<Role[]> => {
     try {
       const response = await client.get<ApiResponse<Role[]>>('/roles', { params });
@@ -66,6 +77,22 @@ export const roleApi = {
     try {
       const response = await client.post<ApiResponse<Role>>('/roles', data);
       return response.data.data;
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
+
+  // 从角色市场安装角色到个人或公司
+  installTemplate: async (
+    templateId: string,
+    data: InstallRoleRequest = {}
+  ): Promise<Role> => {
+    try {
+      const response = await client.post<ApiResponse<{ role: Role }>>(
+        `/roles/templates/${templateId}/install`,
+        data
+      );
+      return response.data.data.role;
     } catch (error) {
       throw handleApiError(error);
     }

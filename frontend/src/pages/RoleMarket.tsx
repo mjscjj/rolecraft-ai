@@ -3,8 +3,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Plus, Filter, Grid3X3, List, Sparkles } from 'lucide-react';
 import { RoleCard } from '../components/RoleCard';
+import RoleDefinitionPreview from '../components/RoleDefinitionPreview';
 import type { Role } from '../types';
 import roleApi from '../api/role';
+import companyApi, { type Company } from '../api/company';
 
 export const RoleMarket: FC = () => {
   const navigate = useNavigate();
@@ -14,6 +16,8 @@ export const RoleMarket: FC = () => {
   const [activeCategory, setActiveCategory] = useState('全部');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
+  const [previewRole, setPreviewRole] = useState<Role | null>(null);
+  const [companies, setCompanies] = useState<Company[]>([]);
 
   useEffect(() => {
     const loadTemplates = async () => {
@@ -38,6 +42,18 @@ export const RoleMarket: FC = () => {
     loadTemplates();
   }, []);
 
+  useEffect(() => {
+    const loadCompanies = async () => {
+      try {
+        const rows = await companyApi.list();
+        setCompanies(rows);
+      } catch {
+        setCompanies([]);
+      }
+    };
+    loadCompanies();
+  }, []);
+
   const categories = useMemo(() => {
     const fromData = Array.from(new Set(roles.map((r) => r.category).filter(Boolean)));
     return ['全部', ...fromData];
@@ -52,13 +68,23 @@ export const RoleMarket: FC = () => {
 
   const handleUseTemplate = async (template: Role) => {
     try {
-      const created = await roleApi.create({
-        name: template.name,
-        description: template.description || '',
-        category: template.category || '通用',
-        systemPrompt: template.systemPrompt || '你是一个有帮助的 AI 助手。',
-        welcomeMessage: template.welcomeMessage || `你好！我是${template.name}，很高兴为你服务。`,
-      });
+      let created;
+      if (companies.length === 0) {
+        created = await roleApi.installTemplate(template.id, { targetType: 'personal' });
+      } else {
+        const hint = companies.map((c) => `${c.id}:${c.name}`).join('\n');
+        const input = window.prompt(
+          `输入安装目标: personal 或 company:<companyId>\n可用公司:\n${hint}`,
+          'personal'
+        );
+        let targetType: 'personal' | 'company' = 'personal';
+        let companyId = '';
+        if (input && input.startsWith('company:')) {
+          targetType = 'company';
+          companyId = input.slice('company:'.length).trim();
+        }
+        created = await roleApi.installTemplate(template.id, { targetType, companyId });
+      }
       navigate(`/chat/${created.id}`);
     } catch (err: any) {
       alert(err?.message || '使用模板失败，请先登录');
@@ -70,8 +96,8 @@ export const RoleMarket: FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">角色中心</h1>
-          <p className="text-slate-500 mt-1">发现和使用 AI 角色，或创建属于你自己的角色</p>
+          <h1 className="text-2xl font-bold text-slate-900">角色市场</h1>
+          <p className="text-slate-500 mt-1">从市场安装角色到“我的角色”或“我的公司”，再进入对话/工作区执行</p>
         </div>
         <div className="flex items-center gap-3">
           <a 
@@ -157,6 +183,7 @@ export const RoleMarket: FC = () => {
             key={role.id}
             role={role}
             onClick={() => handleUseTemplate(role)}
+            onPreview={() => setPreviewRole(role)}
             onUse={() => handleUseTemplate(role)}
           />
         ))}
@@ -170,6 +197,19 @@ export const RoleMarket: FC = () => {
           <p className="text-slate-500">没有找到匹配的角色</p>
         </div>
       )}
+
+      <RoleDefinitionPreview
+        role={previewRole}
+        onClose={() => setPreviewRole(null)}
+        onUse={
+          previewRole
+            ? async () => {
+                await handleUseTemplate(previewRole);
+                setPreviewRole(null);
+              }
+            : undefined
+        }
+      />
     </div>
   );
 };

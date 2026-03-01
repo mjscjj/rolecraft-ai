@@ -57,6 +57,9 @@ func main() {
 		&models.User{},
 		&models.Workspace{},
 		&models.Role{},
+		&models.Company{},
+		&models.Work{},
+		&models.RoleInstall{},
 		&models.Skill{},
 		&models.Document{},
 		&models.Folder{},
@@ -142,9 +145,33 @@ func main() {
 			authorized.GET("/roles", roleHandler.List)
 			authorized.GET("/roles/:id", roleHandler.Get)
 			authorized.POST("/roles", roleHandler.Create)
+			authorized.POST("/roles/templates/:id/install", roleHandler.InstallFromMarket)
 			authorized.PUT("/roles/:id", roleHandler.Update)
 			authorized.DELETE("/roles/:id", roleHandler.Delete)
 			authorized.POST("/roles/:id/chat", roleHandler.Chat)
+
+			// 公司
+			companyHandler := handler.NewCompanyHandler(db)
+			authorized.GET("/companies", companyHandler.List)
+			authorized.POST("/companies", companyHandler.Create)
+			authorized.GET("/companies/:id", companyHandler.Get)
+			authorized.PUT("/companies/:id", companyHandler.Update)
+			authorized.DELETE("/companies/:id", companyHandler.Delete)
+
+			// 工作区（异步执行中心）
+			workHandler := handler.NewWorkHandler(db)
+			// 新命名
+			authorized.GET("/workspaces", workHandler.List)
+			authorized.POST("/workspaces", workHandler.Create)
+			authorized.PUT("/workspaces/:id", workHandler.Update)
+			authorized.DELETE("/workspaces/:id", workHandler.Delete)
+			authorized.POST("/workspaces/:id/run", workHandler.Run)
+			// 兼容旧命名 /works
+			authorized.GET("/works", workHandler.List)
+			authorized.POST("/works", workHandler.Create)
+			authorized.PUT("/works/:id", workHandler.Update)
+			authorized.DELETE("/works/:id", workHandler.Delete)
+			authorized.POST("/works/:id/run", workHandler.Run)
 
 			// 文档
 			docHandler := handler.NewDocumentHandler(db)

@@ -40,14 +40,43 @@ export interface Message {
   sessionId: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
+  sources?: MessageMeta;
   createdAt: string;
+}
+
+export interface MessageMeta {
+  mode?: 'chat' | 'agent' | string;
+  sources?: Array<Record<string, any>>;
+  thoughts?: string[];
 }
 
 interface StreamWithThinkingHandlers {
   onThinking?: (content: string) => void;
   onChunk: (chunk: string) => void;
-  onDone: (assistantMessageId?: string) => void;
+  onDone: (assistantMessageId?: string, meta?: MessageMeta) => void;
 }
+
+const parseMessageMeta = (value: unknown): MessageMeta | undefined => {
+  if (!value) return undefined;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === 'object') return parsed as MessageMeta;
+    } catch {
+      return undefined;
+    }
+    return undefined;
+  }
+  if (typeof value === 'object') {
+    return value as MessageMeta;
+  }
+  return undefined;
+};
+
+const normalizeMessage = (message: any): Message => ({
+  ...message,
+  sources: parseMessageMeta(message?.sources),
+});
 
 const parseSSEEventData = (eventChunk: string): any | null => {
   const data = eventChunk
@@ -66,6 +95,14 @@ const parseSSEEventData = (eventChunk: string): any | null => {
   } catch {
     return null;
   }
+};
+
+const ensureAgentPrefix = (content: string): string => {
+  const trimmed = content.trimStart();
+  if (trimmed.startsWith('@agent')) {
+    return content;
+  }
+  return `@agent ${content}`;
 };
 
 // 对话 API
@@ -107,6 +144,7 @@ export const chatApi = {
       }>>(`/chat-sessions/${id}`);
       return {
         ...response.data.data,
+        messages: (response.data.data.messages || []).map(normalizeMessage),
         session: normalizeSession(response.data.data.session),
       };
     } catch (error) {
@@ -115,7 +153,7 @@ export const chatApi = {
   },
 
   // 发送消息（普通响应）
-  sendMessage: async (sessionId: string, content: string): Promise<{
+  sendMessage: async (sessionId: string, content: string, attachments?: string[]): Promise<{
     userMessage: Message;
     assistantMessage: Message;
   }> => {
@@ -123,8 +161,11 @@ export const chatApi = {
       const response = await client.post<ApiResponse<{
         userMessage: Message;
         assistantMessage: Message;
-      }>>(`/chat/${sessionId}/complete`, { content });
-      return response.data.data;
+      }>>(`/chat/${sessionId}/complete`, { content, attachments: attachments || [] });
+      return {
+        userMessage: normalizeMessage(response.data.data.userMessage),
+        assistantMessage: normalizeMessage(response.data.data.assistantMessage),
+      };
     } catch (error) {
       throw handleApiError(error);
     }
@@ -134,8 +175,9 @@ export const chatApi = {
   streamMessage: async (
     sessionId: string,
     content: string,
+    attachments: string[] | undefined,
     onChunk: (chunk: string) => void,
-    onDone: (assistantMessageId?: string) => void,
+    onDone: (assistantMessageId?: string, meta?: MessageMeta) => void,
     signal?: AbortSignal
   ): Promise<void> => {
     const token = localStorage.getItem('token');
@@ -146,12 +188,26 @@ export const chatApi = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, attachments: attachments || [] }),
       signal,
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+      let reason = `HTTP ${response.status}`;
+      try {
+        const text = await response.text();
+        if (text) {
+          try {
+            const parsed = JSON.parse(text);
+            reason = parsed?.error || parsed?.message || reason;
+          } catch {
+            reason = text;
+          }
+        }
+      } catch {
+        // ignore read error
+      }
+      throw new Error(reason);
     }
 
     const reader = response.body?.getReader();
@@ -160,13 +216,14 @@ export const chatApi = {
     const decoder = new TextDecoder();
     let buffer = '';
     let assistantMessageId: string | undefined;
+    let messageMeta: MessageMeta | undefined;
     let finished = false;
     const doneOnce = () => {
       if (finished) {
         return;
       }
       finished = true;
-      onDone(assistantMessageId);
+      onDone(assistantMessageId, messageMeta);
     };
 
     while (true) {
@@ -190,6 +247,9 @@ export const chatApi = {
         if (typeof parsed.assistantMessageId === 'string' && parsed.assistantMessageId !== '') {
           assistantMessageId = parsed.assistantMessageId;
         }
+        if (parsed.meta) {
+          messageMeta = parseMessageMeta(parsed.meta);
+        }
         if (parsed.done) {
           doneOnce();
         }
@@ -205,6 +265,9 @@ export const chatApi = {
       if (typeof parsed?.assistantMessageId === 'string' && parsed.assistantMessageId !== '') {
         assistantMessageId = parsed.assistantMessageId;
       }
+      if (parsed?.meta) {
+        messageMeta = parseMessageMeta(parsed.meta);
+      }
       if (parsed?.done) {
         doneOnce();
       }
@@ -217,10 +280,12 @@ export const chatApi = {
   streamMessageWithThinking: async (
     sessionId: string,
     content: string,
+    attachments: string[] | undefined,
     handlers: StreamWithThinkingHandlers,
     signal?: AbortSignal
   ): Promise<void> => {
     const token = localStorage.getItem('token');
+    const payloadContent = ensureAgentPrefix(content);
 
     const response = await fetch(`${API_BASE_URL}/chat/${sessionId}/stream-with-thinking`, {
       method: 'POST',
@@ -228,12 +293,26 @@ export const chatApi = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content: payloadContent, attachments: attachments || [] }),
       signal,
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+      let reason = `HTTP ${response.status}`;
+      try {
+        const text = await response.text();
+        if (text) {
+          try {
+            const parsed = JSON.parse(text);
+            reason = parsed?.error || parsed?.message || reason;
+          } catch {
+            reason = text;
+          }
+        }
+      } catch {
+        // ignore read error
+      }
+      throw new Error(reason);
     }
 
     const reader = response.body?.getReader();
@@ -242,13 +321,14 @@ export const chatApi = {
     const decoder = new TextDecoder();
     let buffer = '';
     let assistantMessageId: string | undefined;
+    let messageMeta: MessageMeta | undefined;
     let finished = false;
     const doneOnce = () => {
       if (finished) {
         return;
       }
       finished = true;
-      handlers.onDone(assistantMessageId);
+      handlers.onDone(assistantMessageId, messageMeta);
     };
 
     while (true) {
@@ -288,6 +368,9 @@ export const chatApi = {
         if (typeof parsed.assistantMessageId === 'string' && parsed.assistantMessageId !== '') {
           assistantMessageId = parsed.assistantMessageId;
         }
+        if (parsed.meta) {
+          messageMeta = parseMessageMeta(parsed.meta);
+        }
 
         if (parsed.done || parsed.type === 'done') {
           doneOnce();
@@ -312,6 +395,9 @@ export const chatApi = {
         }
         if (typeof parsed.assistantMessageId === 'string' && parsed.assistantMessageId !== '') {
           assistantMessageId = parsed.assistantMessageId;
+        }
+        if (parsed.meta) {
+          messageMeta = parseMessageMeta(parsed.meta);
         }
         if (parsed.done || parsed.type === 'done') {
           doneOnce();

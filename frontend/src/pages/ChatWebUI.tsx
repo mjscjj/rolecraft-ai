@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import Sidebar from '../components/WebUI/Sidebar';
 import Message from '../components/WebUI/Message';
 import ChatInput from '../components/WebUI/ChatInput';
@@ -16,6 +16,7 @@ interface ChatWebUIProps {
 
 const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
   const { roleId: routeRoleId } = useParams<{ roleId: string }>();
+  const navigate = useNavigate();
   const [selectedRoleId, setSelectedRoleId] = useState('');
   const effectiveRoleId = initialRoleId || routeRoleId || selectedRoleId;
 
@@ -50,6 +51,7 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
   const [availableRoles, setAvailableRoles] = useState<Array<{ id: string; name: string }>>([]);
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const [pendingAttachmentNames, setPendingAttachmentNames] = useState<string[]>([]);
+  const [pendingAttachmentIds, setPendingAttachmentIds] = useState<string[]>([]);
   const [showWelcome, setShowWelcome] = useState(true);
   const [userInitials, setUserInitials] = useState('U');
 
@@ -214,38 +216,76 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
 
   // Handle send message
   const handleSendMessage = async (content: string) => {
-    const attachmentPrefix = pendingAttachmentNames.length
-      ? `本轮新增知识文档：${pendingAttachmentNames.join('、')}\n请结合这些文档回答。\n\n`
-      : '';
-    const composedContent = `${attachmentPrefix}${content}`;
+    const composedContent = content;
+    const attachments = pendingAttachmentIds;
+
+    if (attachments.length > 0) {
+      try {
+        const states = await Promise.all(
+          attachments.map(async (id) => {
+            const status = await documentApi.getStatus(id);
+            return { id, status: status.status };
+          })
+        );
+        const notReady = states.filter((item) => item.status !== 'completed');
+        if (notReady.length > 0) {
+          alert('部分文档仍在处理中，请稍后再发送，这样 AI 才能读取导入内容。');
+          return;
+        }
+      } catch (error) {
+        console.warn('Failed to validate attachment status:', error);
+      }
+    }
 
     const sendByMode = async (text: string) => {
       if (chatMode === 'deep') {
-        await sendStreamMessageWithThinking(text);
+        await sendStreamMessageWithThinking(text, attachments);
       } else {
-        await sendStreamMessage(text);
+        await sendStreamMessage(text, attachments);
       }
     };
 
     if (!currentSession) {
       // Create new session if none exists
-      if (effectiveRoleId) {
-        try {
-          await createSession(effectiveRoleId, content.slice(0, 30) + '...', 'quick', buildSessionConfig());
-          // Message will be sent after session is created
-          setTimeout(() => {
-            sendByMode(composedContent);
-          }, 100);
-          setPendingAttachmentNames([]);
-        } catch (error) {
-          console.error('Failed to create session:', error);
-        }
-      } else {
+      if (!effectiveRoleId) {
         alert('请先选择一个 AI 角色');
+        return;
+      }
+
+      try {
+        await createSession(effectiveRoleId, content.slice(0, 30) + '...', 'quick', buildSessionConfig());
+        await sendByMode(composedContent);
+        setPendingAttachmentNames([]);
+        setPendingAttachmentIds([]);
+      } catch (error: any) {
+        console.error('Failed to create session:', error);
+        // 路由中的 roleId 可能已失效，自动回退到可用角色重试一次。
+        const fallbackRoleId = availableRoles[0]?.id;
+        if (fallbackRoleId && fallbackRoleId !== effectiveRoleId) {
+          try {
+            setSelectedRoleId(fallbackRoleId);
+            await createSession(
+              fallbackRoleId,
+              content.slice(0, 30) + '...',
+              'quick',
+              buildSessionConfig()
+            );
+            await sendByMode(composedContent);
+            setPendingAttachmentNames([]);
+            setPendingAttachmentIds([]);
+            return;
+          } catch (retryError: any) {
+            console.error('Retry create session failed:', retryError);
+            alert(retryError?.message || '创建会话失败，请重新选择角色后再试');
+            return;
+          }
+        }
+        alert(error?.message || '创建会话失败，请重新选择角色后再试');
       }
     } else {
       await sendByMode(composedContent);
       setPendingAttachmentNames([]);
+      setPendingAttachmentIds([]);
     }
   };
 
@@ -337,6 +377,7 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
       const successCount = results.filter((result) => result.status === 'fulfilled').length;
       const failCount = results.length - successCount;
       const uploadedNames: string[] = [];
+      const uploadedIds: string[] = [];
 
       results.forEach((result) => {
         if (result.status !== 'fulfilled') return;
@@ -347,6 +388,9 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
           if (typedDoc?.name) {
             uploadedNames.push(typedDoc.name);
           }
+          if (typedDoc?.id) {
+            uploadedIds.push(typedDoc.id);
+          }
         });
       });
 
@@ -354,6 +398,9 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
         setSelectedKnowledge('all');
         if (uploadedNames.length > 0) {
           setPendingAttachmentNames(uploadedNames);
+        }
+        if (uploadedIds.length > 0) {
+          setPendingAttachmentIds(uploadedIds);
         }
       }
 
@@ -422,7 +469,15 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
           >
             {isSidebarCollapsed ? '➡️' : '⬅️'}
           </button>
-          <div className="logo">
+          <button
+            className="icon-button"
+            onClick={() => navigate('/')}
+            title="返回主页"
+            style={{ marginRight: 8 }}
+          >
+            🏠
+          </button>
+          <div className="logo" style={{ cursor: 'pointer' }} onClick={() => navigate('/')}>
             <span className="logo-icon">🎭</span>
             <span>RoleCraft</span>
           </div>
@@ -619,6 +674,7 @@ const ChatWebUI: React.FC<ChatWebUIProps> = ({ initialRoleId }) => {
                       id={message.id}
                       role={message.role}
                       content={message.content}
+                      sources={message.sources}
                       createdAt={message.createdAt}
                       isStreaming={isStreaming && message.id === messages[messages.length - 1].id && message.role === 'assistant' && !message.content}
                       onEdit={handleEditMessage}

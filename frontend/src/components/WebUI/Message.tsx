@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import rehypeHighlight from 'rehype-highlight';
+import type { MessageMeta } from '../../api/chat';
 import 'katex/dist/katex.min.css';
 import 'highlight.js/styles/github-dark.css';
 
@@ -11,6 +12,7 @@ interface MessageProps {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
+  sources?: MessageMeta;
   createdAt: string;
   isStreaming?: boolean;
   onEdit?: (messageId: string, newContent: string) => void;
@@ -23,6 +25,7 @@ const Message: React.FC<MessageProps> = ({
   id,
   role,
   content,
+  sources,
   createdAt,
   isStreaming = false,
   onEdit,
@@ -35,6 +38,9 @@ const Message: React.FC<MessageProps> = ({
 
   const isUser = role === 'user';
   const isAI = role === 'assistant';
+  const isAgentMode = isAI && sources?.mode === 'agent';
+  const sourceItems = Array.isArray(sources?.sources) ? sources.sources : [];
+  const thoughtItems = Array.isArray(sources?.thoughts) ? sources.thoughts : [];
 
   const handleCopy = () => {
     navigator.clipboard.writeText(content);
@@ -114,114 +120,176 @@ const Message: React.FC<MessageProps> = ({
               </div>
             </div>
           ) : (
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm, remarkMath]}
-              rehypePlugins={[rehypeKatex, rehypeHighlight]}
-              components={{
-                // Custom code block rendering
-                code({ node, inline, className, children, ...props }: any) {
-                  const match = /language-(\w+)/.exec(className || '');
-                  const language = match ? match[1] : '';
-                  const codeText = String(children).replace(/\n$/, '');
+            <>
+              {isAgentMode && (
+                <div className="agent-mode-header">
+                  <span className="agent-mode-badge">Agent</span>
+                  <span className="agent-mode-label">深度执行模式</span>
+                </div>
+              )}
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm, remarkMath]}
+                rehypePlugins={[rehypeKatex, rehypeHighlight]}
+                components={{
+                  // Custom code block rendering
+                  code({ node, inline, className, children, ...props }: any) {
+                    const match = /language-(\w+)/.exec(className || '');
+                    const language = match ? match[1] : '';
+                    const codeText = String(children).replace(/\n$/, '');
 
-                  if (!inline) {
+                    if (!inline) {
+                      return (
+                        <div style={{ position: 'relative', margin: '12px 0' }}>
+                          {language && (
+                            <div
+                              style={{
+                                position: 'absolute',
+                                top: '8px',
+                                right: '12px',
+                                fontSize: '11px',
+                                color: 'var(--code-comment)',
+                                fontFamily: 'monospace',
+                              }}
+                            >
+                              {language}
+                            </div>
+                          )}
+                          <pre style={{ margin: 0 }}>
+                            <code className={className} {...props}>
+                              {children}
+                            </code>
+                          </pre>
+                        </div>
+                      );
+                    }
+
                     return (
-                      <div style={{ position: 'relative', margin: '12px 0' }}>
-                        {language && (
-                          <div
-                            style={{
-                              position: 'absolute',
-                              top: '8px',
-                              right: '12px',
-                              fontSize: '11px',
-                              color: 'var(--code-comment)',
-                              fontFamily: 'monospace',
-                            }}
-                          >
-                            {language}
-                          </div>
-                        )}
-                        <pre style={{ margin: 0 }}>
-                          <code className={className} {...props}>
-                            {children}
-                          </code>
-                        </pre>
+                      <code
+                        style={{
+                          padding: '2px 6px',
+                          background: 'var(--bg-tertiary)',
+                          borderRadius: '4px',
+                          fontFamily: "'SF Mono', 'Consolas', monospace",
+                          fontSize: '0.9em',
+                        }}
+                        {...props}
+                      >
+                        {children}
+                      </code>
+                    );
+                  },
+                  // Custom table rendering
+                  table({ children }: any) {
+                    return (
+                      <div style={{ overflowX: 'auto', margin: '12px 0' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          {children}
+                        </table>
                       </div>
                     );
-                  }
-
-                  return (
-                    <code
-                      style={{
-                        padding: '2px 6px',
-                        background: 'var(--bg-tertiary)',
-                        borderRadius: '4px',
-                        fontFamily: "'SF Mono', 'Consolas', monospace",
-                        fontSize: '0.9em',
-                      }}
-                      {...props}
-                    >
-                      {children}
-                    </code>
-                  );
-                },
-                // Custom table rendering
-                table({ children }: any) {
-                  return (
-                    <div style={{ overflowX: 'auto', margin: '12px 0' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  },
+                  th({ children }: any) {
+                    return (
+                      <th
+                        style={{
+                          padding: '8px 12px',
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-secondary)',
+                          fontWeight: 600,
+                          textAlign: 'left',
+                        }}
+                      >
                         {children}
-                      </table>
-                    </div>
-                  );
-                },
-                th({ children }: any) {
-                  return (
-                    <th
-                      style={{
-                        padding: '8px 12px',
-                        border: '1px solid var(--border-color)',
-                        background: 'var(--bg-secondary)',
-                        fontWeight: 600,
-                        textAlign: 'left',
-                      }}
-                    >
-                      {children}
-                    </th>
-                  );
-                },
-                td({ children }: any) {
-                  return (
-                    <td
-                      style={{
-                        padding: '8px 12px',
-                        border: '1px solid var(--border-color)',
-                      }}
-                    >
-                      {children}
-                    </td>
-                  );
-                },
-                // Custom blockquote
-                blockquote({ children }: any) {
-                  return (
-                    <blockquote
-                      style={{
-                        margin: '12px 0',
-                        padding: '8px 16px',
-                        borderLeft: '4px solid var(--accent-color)',
-                        background: 'var(--bg-secondary)',
-                        borderRadius: '4px',
-                      }}
-                    >
-                      {children}
-                    </blockquote>
-                  );
-                },
-              }}
-            >
-              {content}
-            </ReactMarkdown>
+                      </th>
+                    );
+                  },
+                  td({ children }: any) {
+                    return (
+                      <td
+                        style={{
+                          padding: '8px 12px',
+                          border: '1px solid var(--border-color)',
+                        }}
+                      >
+                        {children}
+                      </td>
+                    );
+                  },
+                  // Custom blockquote
+                  blockquote({ children }: any) {
+                    return (
+                      <blockquote
+                        style={{
+                          margin: '12px 0',
+                          padding: '8px 16px',
+                          borderLeft: '4px solid var(--accent-color)',
+                          background: 'var(--bg-secondary)',
+                          borderRadius: '4px',
+                        }}
+                      >
+                        {children}
+                      </blockquote>
+                    );
+                  },
+                  a({ href, children }: any) {
+                    return (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          color: 'var(--accent-color)',
+                          textDecoration: 'underline',
+                          wordBreak: 'break-all',
+                        }}
+                      >
+                        {children}
+                      </a>
+                    );
+                  },
+                }}
+              >
+                {content}
+              </ReactMarkdown>
+              {thoughtItems.length > 0 && (
+                <div className="agent-thoughts">
+                  <div className="agent-thoughts-title">思考要点</div>
+                  <ul>
+                    {thoughtItems.slice(0, 4).map((thought, index) => (
+                      <li key={`${thought}-${index}`}>{thought}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {sourceItems.length > 0 && (
+                <div className="agent-sources">
+                  <div className="agent-sources-title">检索来源</div>
+                  <ol>
+                    {sourceItems.map((item, index) => {
+                      const title =
+                        (typeof item?.title === 'string' && item.title) ||
+                        (typeof item?.name === 'string' && item.name) ||
+                        `来源 ${index + 1}`;
+                      const url =
+                        (typeof item?.url === 'string' && item.url) ||
+                        (typeof item?.link === 'string' && item.link) ||
+                        '';
+                      return (
+                        <li key={`${title}-${index}`}>
+                          {url ? (
+                            <a href={url} target="_blank" rel="noopener noreferrer">
+                              {title}
+                            </a>
+                          ) : (
+                            <span>{title}</span>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </div>
+              )}
+            </>
           )}
 
           {/* Typing Indicator */}

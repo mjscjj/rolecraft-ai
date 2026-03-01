@@ -17,7 +17,7 @@ export const Settings = () => {
 
   // API 配置
   const [apiConfig, setApiConfig] = useState({
-    openRouterKey: localStorage.getItem('openRouterKey') || '',
+    anythingLLMKey: localStorage.getItem('customAPIKey') || localStorage.getItem('openRouterKey') || '',
     preferredModel: localStorage.getItem('preferredModel') || 'google/gemini-3-flash-preview',
   });
 
@@ -51,9 +51,20 @@ export const Settings = () => {
   };
 
   const handleSaveApiConfig = () => {
-    localStorage.setItem('openRouterKey', apiConfig.openRouterKey);
+    const key = apiConfig.anythingLLMKey.trim();
+    if (key && !key.startsWith('sk-')) {
+      setMessage({ type: 'error', text: 'API Key 格式看起来不正确，请检查后重试' });
+      return;
+    }
+    if (key.startsWith('sk-or-')) {
+      setMessage({ type: 'error', text: '当前对话链路使用 AnythingLLM，请填写 AnythingLLM 的 API Key（不是 OpenRouter Key）' });
+      return;
+    }
+    localStorage.setItem('customAPIKey', key);
+    // 兼容旧字段，避免老逻辑读取不到
+    localStorage.setItem('openRouterKey', key);
     localStorage.setItem('preferredModel', apiConfig.preferredModel);
-    setMessage({ type: 'success', text: 'API 配置已保存（本地）' });
+    setMessage({ type: 'success', text: 'API 配置已保存并将在新会话中生效' });
   };
 
   const handleThemeChange = (newTheme: string) => {
@@ -252,17 +263,17 @@ export const Settings = () => {
                     <div className="space-y-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          OpenRouter API Key
+                          AnythingLLM API Key
                         </label>
                         <input
                           type="password"
-                          value={apiConfig.openRouterKey}
-                          onChange={(e) => setApiConfig({ ...apiConfig, openRouterKey: e.target.value })}
+                          value={apiConfig.anythingLLMKey}
+                          onChange={(e) => setApiConfig({ ...apiConfig, anythingLLMKey: e.target.value })}
                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                          placeholder="sk-or-v1-..."
+                          placeholder="sk-..."
                         />
                         <p className="text-xs text-gray-500 mt-1">
-                          用于访问 OpenRouter AI 服务，配置后存储在本地
+                          当前聊天走 AnythingLLM，此处应填写 AnythingLLM API Key（OpenRouter Key 不会在当前链路直接生效）
                         </p>
                       </div>
 

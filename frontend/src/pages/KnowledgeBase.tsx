@@ -1,5 +1,7 @@
-import type { FC } from 'react';
+import type { FC, ReactNode } from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { 
   Upload, 
   FileText, 
@@ -112,6 +114,8 @@ const getStatusText = (status: string) => {
 const getFileIcon = (fileType: string) => {
   const colorClass = fileType === 'pdf' ? 'text-red-500 bg-red-50' :
                     fileType === 'doc' || fileType === 'docx' ? 'text-blue-500 bg-blue-50' :
+                    fileType === 'xls' || fileType === 'xlsx' || fileType === 'csv' ? 'text-emerald-500 bg-emerald-50' :
+                    fileType === 'ppt' || fileType === 'pptx' ? 'text-orange-500 bg-orange-50' :
                     fileType === 'txt' || fileType === 'md' ? 'text-slate-500 bg-slate-50' :
                     'text-slate-500 bg-slate-50';
   
@@ -130,6 +134,27 @@ const highlightText = (text: string, query: string) => {
       <mark key={i} className="bg-yellow-200 px-0.5 rounded">{part}</mark> : 
       part
   );
+};
+
+const renderTextWithLinks = (text: string): ReactNode => {
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const segments = text.split(urlRegex);
+  return segments.map((segment, index) => {
+    if (/^https?:\/\//.test(segment)) {
+      return (
+        <a
+          key={`link-${index}`}
+          href={segment}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-600 underline break-all"
+        >
+          {segment}
+        </a>
+      );
+    }
+    return <span key={`text-${index}`}>{segment}</span>;
+  });
 };
 
 // ==================== 主组件 ====================
@@ -280,6 +305,9 @@ export const KnowledgeBase: FC = () => {
       // 基于文件类型
       if (doc.fileType === 'pdf') tags.push('PDF');
       if (doc.fileType === 'doc' || doc.fileType === 'docx') tags.push('Word');
+      if (doc.fileType === 'xls' || doc.fileType === 'xlsx' || doc.fileType === 'csv') tags.push('Excel');
+      if (doc.fileType === 'ppt' || doc.fileType === 'pptx') tags.push('PPT');
+      if (doc.fileType === 'md') tags.push('笔记');
       
       tagsMap[doc.id] = tags;
     });
@@ -705,7 +733,7 @@ export const KnowledgeBase: FC = () => {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.doc,.docx,.txt,.md"
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.md"
               multiple
               onChange={handleFileSelect}
               disabled={uploading}
@@ -816,8 +844,15 @@ export const KnowledgeBase: FC = () => {
           >
             <option value="">所有类型</option>
             <option value="pdf">PDF</option>
-            <option value="doc">Word</option>
+            <option value="doc">Word(doc)</option>
+            <option value="docx">Word(docx)</option>
+            <option value="xls">Excel(xls)</option>
+            <option value="xlsx">Excel(xlsx)</option>
+            <option value="ppt">PPT(ppt)</option>
+            <option value="pptx">PPT(pptx)</option>
+            <option value="csv">CSV</option>
             <option value="txt">文本</option>
+            <option value="md">Markdown/笔记</option>
           </select>
           
           <select
@@ -1169,7 +1204,12 @@ export const KnowledgeBase: FC = () => {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl w-full max-w-4xl max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b">
-              <h3 className="text-lg font-semibold text-slate-900">{previewDoc.name}</h3>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">{previewDoc.name}</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  {previewDoc.fileType === 'md' || previewDoc.fileType === 'txt' ? '笔记预览' : '文档预览'}
+                </p>
+              </div>
               <button
                 onClick={() => setPreviewDoc(null)}
                 className="p-2 hover:bg-slate-100 rounded-lg"
@@ -1182,9 +1222,29 @@ export const KnowledgeBase: FC = () => {
                 <div className="text-center py-20 text-slate-500">加载中...</div>
               ) : previewDoc.fileType === 'pdf' ? (
                 <iframe src={previewContent} className="w-full h-[60vh]" />
+              ) : previewDoc.fileType === 'md' ? (
+                <article className="prose max-w-none prose-slate">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      a: ({ href, children }) => (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 underline"
+                        >
+                          {children}
+                        </a>
+                      ),
+                    }}
+                  >
+                    {previewContent}
+                  </ReactMarkdown>
+                </article>
               ) : (
-                <pre className="bg-slate-50 p-4 rounded-lg overflow-auto text-sm font-mono">
-                  {previewContent}
+                <pre className="bg-slate-50 p-4 rounded-lg overflow-auto text-sm font-mono whitespace-pre-wrap break-words">
+                  {renderTextWithLinks(previewContent)}
                 </pre>
               )}
             </div>

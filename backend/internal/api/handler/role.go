@@ -41,12 +41,19 @@ type CreateRoleRequest struct {
 	Name           string                 `json:"name" binding:"required" example:"智能助理"`
 	Description    string                 `json:"description" example:"全能型办公助手"`
 	Category       string                 `json:"category" example:"通用"`
+	CompanyID      string                 `json:"companyId" example:""`
 	SystemPrompt   string                 `json:"systemPrompt" binding:"required" example:"你是一位智能助理..."`
 	WelcomeMessage string                 `json:"welcomeMessage" example:"你好！有什么可以帮你的吗？"`
 	Avatar         string                 `json:"avatar" example:""`
 	ModelConfig    map[string]interface{} `json:"modelConfig" example:"{\"temperature\":0.7}"`
 	IsTemplate     bool                   `json:"isTemplate" example:"false"`
 	IsPublic       bool                   `json:"isPublic" example:"false"`
+}
+
+type InstallRoleRequest struct {
+	TargetType string `json:"targetType"` // personal/company
+	CompanyID  string `json:"companyId"`
+	Name       string `json:"name"`
 }
 
 // RoleCapability 角色能力评估
@@ -181,7 +188,19 @@ func (h *RoleHandler) List(c *gin.Context) {
 	userIDStr, _ := userID.(string)
 	var roles []models.Role
 
+	companyIDs := h.getOwnedCompanyIDs(userIDStr)
 	query := h.db.Where("user_id = ?", userIDStr)
+	if len(companyIDs) > 0 {
+		query = h.db.Where("user_id = ? OR company_id IN ?", userIDStr, companyIDs)
+	}
+
+	if companyID := c.Query("companyId"); companyID != "" {
+		if !containsString(companyIDs, companyID) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "no access to this company"})
+			return
+		}
+		query = h.db.Where("company_id = ?", companyID)
+	}
 
 	// 分类筛选
 	if category := c.Query("category"); category != "" {
@@ -218,8 +237,12 @@ func (h *RoleHandler) Get(c *gin.Context) {
 	id := c.Param("id")
 
 	var role models.Role
-	if result := h.db.First(&role, "id = ? AND user_id = ?", id, userIDStr); result.Error != nil {
+	if result := h.db.First(&role, "id = ?", id); result.Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "role not found"})
+		return
+	}
+	if !h.canManageRole(userIDStr, role) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "no access to this role"})
 		return
 	}
 
@@ -241,9 +264,18 @@ func (h *RoleHandler) Create(c *gin.Context) {
 		return
 	}
 
+	if req.CompanyID != "" {
+		var company models.Company
+		if err := h.db.Where("id = ? AND owner_id = ?", req.CompanyID, userIDStr).First(&company).Error; err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": "no access to this company"})
+			return
+		}
+	}
+
 	role := models.Role{
 		ID:             models.NewUUID(),
 		UserID:         userIDStr,
+		CompanyID:      req.CompanyID,
 		Name:           req.Name,
 		Description:    req.Description,
 		Category:       req.Category,
@@ -288,15 +320,28 @@ func (h *RoleHandler) Update(c *gin.Context) {
 	}
 
 	var role models.Role
-	if result := h.db.First(&role, "id = ? AND user_id = ?", id, userIDStr); result.Error != nil {
+	if result := h.db.First(&role, "id = ?", id); result.Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "role not found"})
 		return
+	}
+	if !h.canManageRole(userIDStr, role) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "no access to this role"})
+		return
+	}
+
+	if req.CompanyID != "" {
+		var company models.Company
+		if err := h.db.Where("id = ? AND owner_id = ?", req.CompanyID, userIDStr).First(&company).Error; err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": "no access to this company"})
+			return
+		}
 	}
 
 	// 更新字段
 	role.Name = req.Name
 	role.Description = req.Description
 	role.Category = req.Category
+	role.CompanyID = req.CompanyID
 	role.SystemPrompt = req.SystemPrompt
 	role.WelcomeMessage = req.WelcomeMessage
 	role.Avatar = req.Avatar
@@ -329,7 +374,17 @@ func (h *RoleHandler) Delete(c *gin.Context) {
 	userIDStr, _ := userID.(string)
 	id := c.Param("id")
 
-	if result := h.db.Delete(&models.Role{}, "id = ? AND user_id = ?", id, userIDStr); result.Error != nil {
+	var role models.Role
+	if result := h.db.First(&role, "id = ?", id); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "role not found"})
+		return
+	}
+	if !h.canManageRole(userIDStr, role) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "no access to this role"})
+		return
+	}
+
+	if result := h.db.Delete(&models.Role{}, "id = ?", id); result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 		return
 	}
@@ -338,6 +393,152 @@ func (h *RoleHandler) Delete(c *gin.Context) {
 		"code":    200,
 		"message": "success",
 	})
+}
+
+// InstallFromMarket 从角色市场安装到“我的角色”或“我的公司”
+func (h *RoleHandler) InstallFromMarket(c *gin.Context) {
+	userID, _ := c.Get("userId")
+	userIDStr, _ := userID.(string)
+	templateID := c.Param("id")
+
+	var req InstallRoleRequest
+	_ = c.ShouldBindJSON(&req)
+	targetType := strings.TrimSpace(req.TargetType)
+	if targetType == "" {
+		targetType = "personal"
+	}
+	if targetType != "personal" && targetType != "company" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "targetType must be personal or company"})
+		return
+	}
+
+	template, ok := h.findTemplateByID(templateID)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
+		return
+	}
+
+	companyID := ""
+	if targetType == "company" {
+		companyID = strings.TrimSpace(req.CompanyID)
+		if companyID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "companyId is required"})
+			return
+		}
+		var company models.Company
+		if err := h.db.Where("id = ? AND owner_id = ?", companyID, userIDStr).First(&company).Error; err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": "no access to this company"})
+			return
+		}
+	}
+
+	roleName := strings.TrimSpace(req.Name)
+	if roleName == "" {
+		roleName = template.Name
+	}
+
+	modelCfg := map[string]interface{}{
+		"installedFromMarket": true,
+		"sourceTemplateId":    template.ID,
+		"sourceTemplateName":  template.Name,
+		"targetType":          targetType,
+	}
+	cfgJSON, _ := json.Marshal(modelCfg)
+
+	role := models.Role{
+		ID:             models.NewUUID(),
+		UserID:         userIDStr,
+		CompanyID:      companyID,
+		Name:           roleName,
+		Description:    template.Description,
+		Category:       template.Category,
+		SystemPrompt:   template.SystemPrompt,
+		WelcomeMessage: template.WelcomeMessage,
+		Avatar:         template.Avatar,
+		ModelConfig:    models.JSON(cfgJSON),
+		IsTemplate:     false,
+		IsPublic:       false,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+	}
+
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&role).Error; err != nil {
+			return err
+		}
+		install := models.RoleInstall{
+			ID:              models.NewUUID(),
+			TemplateID:      template.ID,
+			InstalledRoleID: role.ID,
+			InstallerUserID: userIDStr,
+			TargetType:      targetType,
+			TargetID: func() string {
+				if targetType == "company" {
+					return companyID
+				}
+				return userIDStr
+			}(),
+			CreatedAt: time.Now(),
+		}
+		return tx.Create(&install).Error
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	go h.syncToAnythingLLM(role)
+
+	c.JSON(http.StatusCreated, gin.H{
+		"code":    200,
+		"message": "success",
+		"data": gin.H{
+			"role":       role,
+			"templateId": template.ID,
+			"targetType": targetType,
+			"companyId":  companyID,
+		},
+	})
+}
+
+func (h *RoleHandler) findTemplateByID(id string) (EnhancedRoleTemplate, bool) {
+	for _, tpl := range h.getEnhancedTemplatesList() {
+		if tpl.ID == id {
+			return tpl, true
+		}
+	}
+	return EnhancedRoleTemplate{}, false
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *RoleHandler) getOwnedCompanyIDs(userID string) []string {
+	var companies []models.Company
+	if err := h.db.Select("id").Where("owner_id = ?", userID).Find(&companies).Error; err != nil {
+		return nil
+	}
+	ids := make([]string, 0, len(companies))
+	for _, company := range companies {
+		ids = append(ids, company.ID)
+	}
+	return ids
+}
+
+func (h *RoleHandler) canManageRole(userID string, role models.Role) bool {
+	if role.UserID == userID {
+		return true
+	}
+	if role.CompanyID == "" {
+		return false
+	}
+	var company models.Company
+	return h.db.Where("id = ? AND owner_id = ?", role.CompanyID, userID).First(&company).Error == nil
 }
 
 // Evaluate 评估角色能力
