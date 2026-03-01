@@ -1,24 +1,45 @@
 package handler
 
 import (
-	"fmt"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
 	"rolecraft-ai/internal/models"
+	workspaceSvc "rolecraft-ai/internal/service/workspace"
 )
 
 type WorkHandler struct {
-	db *gorm.DB
+	db     *gorm.DB
+	runner *workspaceSvc.Runner
 }
 
-func NewWorkHandler(db *gorm.DB) *WorkHandler {
-	return &WorkHandler{db: db}
+type AgentRunResponse struct {
+	ID            string                 `json:"id"`
+	WorkID        string                 `json:"workId"`
+	UserID        string                 `json:"userId"`
+	CompanyID     string                 `json:"companyId,omitempty"`
+	TriggerSource string                 `json:"triggerSource"`
+	Status        string                 `json:"status"`
+	Summary       string                 `json:"summary"`
+	FinalAnswer   string                 `json:"finalAnswer"`
+	Confidence    float64                `json:"confidence"`
+	Trace         map[string]interface{} `json:"trace,omitempty"`
+	ErrorMessage  string                 `json:"errorMessage,omitempty"`
+	StartedAt     *time.Time             `json:"startedAt,omitempty"`
+	FinishedAt    *time.Time             `json:"finishedAt,omitempty"`
+	CreatedAt     time.Time              `json:"createdAt"`
+	UpdatedAt     time.Time              `json:"updatedAt"`
+}
+
+func NewWorkHandler(db *gorm.DB, runner *workspaceSvc.Runner) *WorkHandler {
+	return &WorkHandler{db: db, runner: runner}
 }
 
 type WorkRequest struct {
@@ -39,106 +60,64 @@ type WorkRequest struct {
 	Config        map[string]interface{} `json:"config"`
 }
 
-func normalizeTimezone(tz string) string {
-	value := strings.TrimSpace(tz)
-	if value == "" {
-		return "Asia/Shanghai"
-	}
-	return value
+type BatchRunRequest struct {
+	IDs         []string `json:"ids"`
+	MaxParallel int      `json:"maxParallel"`
 }
 
-func parseTimeInLocation(raw string, location *time.Location) (time.Time, error) {
-	layouts := []string{
-		time.RFC3339,
-		"2006-01-02 15:04",
-		"2006-01-02 15:04:05",
-	}
-	var lastErr error
-	for _, layout := range layouts {
-		t, err := time.ParseInLocation(layout, raw, location)
-		if err == nil {
-			return t, nil
-		}
-		lastErr = err
-	}
-	return time.Time{}, lastErr
+type BatchRunItemResponse struct {
+	WorkID string            `json:"workId"`
+	Status string            `json:"status"`
+	Error  string            `json:"error,omitempty"`
+	Run    *AgentRunResponse `json:"run,omitempty"`
 }
 
-func computeNextRunAt(triggerType, triggerValue, timezone string, now time.Time) (*time.Time, error) {
-	mode := strings.TrimSpace(triggerType)
-	value := strings.TrimSpace(triggerValue)
-	location, err := time.LoadLocation(normalizeTimezone(timezone))
-	if err != nil {
-		return nil, fmt.Errorf("invalid timezone: %w", err)
+func parseJSONMap(raw models.JSON) map[string]interface{} {
+	text := strings.TrimSpace(string(raw))
+	if text == "" {
+		return nil
 	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &payload); err != nil {
+		return map[string]interface{}{
+			"raw": text,
+		}
+	}
+	if len(payload) == 0 {
+		return nil
+	}
+	return payload
+}
 
-	switch mode {
-	case "", "manual":
-		return nil, nil
-	case "once":
-		if value == "" {
-			return nil, fmt.Errorf("triggerValue required when triggerType=once")
-		}
-		parsed, err := parseTimeInLocation(value, location)
-		if err != nil {
-			return nil, fmt.Errorf("invalid once triggerValue: %w", err)
-		}
-		return &parsed, nil
-	case "daily":
-		if value == "" {
-			return nil, fmt.Errorf("triggerValue required when triggerType=daily (HH:MM)")
-		}
-		parts := strings.Split(value, ":")
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("invalid daily triggerValue, expected HH:MM")
-		}
-		hour, err := strconv.Atoi(parts[0])
-		if err != nil || hour < 0 || hour > 23 {
-			return nil, fmt.Errorf("invalid daily hour")
-		}
-		minute, err := strconv.Atoi(parts[1])
-		if err != nil || minute < 0 || minute > 59 {
-			return nil, fmt.Errorf("invalid daily minute")
-		}
-		base := now.In(location)
-		next := time.Date(base.Year(), base.Month(), base.Day(), hour, minute, 0, 0, location)
-		if !next.After(base) {
-			next = next.Add(24 * time.Hour)
-		}
-		return &next, nil
-	case "interval_hours":
-		if value == "" {
-			return nil, fmt.Errorf("triggerValue required when triggerType=interval_hours")
-		}
-		hours, err := strconv.Atoi(value)
-		if err != nil || hours <= 0 || hours > 720 {
-			return nil, fmt.Errorf("invalid interval hours, expected 1~720")
-		}
-		next := now.In(location).Add(time.Duration(hours) * time.Hour)
-		return &next, nil
-	default:
-		return nil, fmt.Errorf("unsupported triggerType: %s", mode)
+func toAgentRunResponse(run models.AgentRun) AgentRunResponse {
+	return AgentRunResponse{
+		ID:            run.ID,
+		WorkID:        run.WorkID,
+		UserID:        run.UserID,
+		CompanyID:     run.CompanyID,
+		TriggerSource: run.TriggerSource,
+		Status:        run.Status,
+		Summary:       run.Summary,
+		FinalAnswer:   run.FinalAnswer,
+		Confidence:    run.Confidence,
+		Trace:         parseJSONMap(run.Trace),
+		ErrorMessage:  run.ErrorMessage,
+		StartedAt:     run.StartedAt,
+		FinishedAt:    run.FinishedAt,
+		CreatedAt:     run.CreatedAt,
+		UpdatedAt:     run.UpdatedAt,
 	}
 }
 
-func defaultAsyncStatus(triggerType string) string {
-	switch strings.TrimSpace(triggerType) {
-	case "", "manual":
-		return "idle"
-	default:
-		return "scheduled"
+func toAgentRunResponses(runs []models.AgentRun) []AgentRunResponse {
+	if len(runs) == 0 {
+		return []AgentRunResponse{}
 	}
-}
-
-func buildExecutionSummary(work models.Work, now time.Time) string {
-	switch work.Type {
-	case "report":
-		return fmt.Sprintf("[%s] 自动汇报已生成：%s（规则：%s）", now.Format("2006-01-02 15:04"), work.Name, strings.TrimSpace(work.ReportRule))
-	case "analyze":
-		return fmt.Sprintf("[%s] 文件分析任务已完成：%s（输入源：%s）", now.Format("2006-01-02 15:04"), work.Name, strings.TrimSpace(work.InputSource))
-	default:
-		return fmt.Sprintf("[%s] 异步任务已执行：%s", now.Format("2006-01-02 15:04"), work.Name)
+	resp := make([]AgentRunResponse, 0, len(runs))
+	for _, run := range runs {
+		resp = append(resp, toAgentRunResponse(run))
 	}
+	return resp
 }
 
 func (h *WorkHandler) List(c *gin.Context) {
@@ -207,15 +186,15 @@ func (h *WorkHandler) Create(c *gin.Context) {
 	if strings.TrimSpace(triggerType) == "" {
 		triggerType = "manual"
 	}
-	timezone := normalizeTimezone(req.Timezone)
-	nextRunAt, err := computeNextRunAt(triggerType, req.TriggerValue, timezone, time.Now())
+	timezone := workspaceSvc.NormalizeTimezone(req.Timezone)
+	nextRunAt, err := workspaceSvc.ComputeNextRunAt(triggerType, req.TriggerValue, timezone, time.Now())
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	asyncStatus := req.AsyncStatus
 	if strings.TrimSpace(asyncStatus) == "" {
-		asyncStatus = defaultAsyncStatus(triggerType)
+		asyncStatus = workspaceSvc.DefaultAsyncStatus(triggerType)
 	}
 	configJSON := models.JSON("")
 	if req.Config != nil {
@@ -300,16 +279,16 @@ func (h *WorkHandler) Update(c *gin.Context) {
 			work.TriggerValue = strings.TrimSpace(req.TriggerValue)
 		}
 		if req.Timezone != "" {
-			work.Timezone = normalizeTimezone(req.Timezone)
+			work.Timezone = workspaceSvc.NormalizeTimezone(req.Timezone)
 		}
-		nextRunAt, err := computeNextRunAt(work.TriggerType, work.TriggerValue, work.Timezone, time.Now())
+		nextRunAt, err := workspaceSvc.ComputeNextRunAt(work.TriggerType, work.TriggerValue, work.Timezone, time.Now())
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		work.NextRunAt = nextRunAt
 		if req.AsyncStatus == "" {
-			work.AsyncStatus = defaultAsyncStatus(work.TriggerType)
+			work.AsyncStatus = workspaceSvc.DefaultAsyncStatus(work.TriggerType)
 		}
 	}
 	if req.AsyncStatus != "" {
@@ -347,8 +326,198 @@ func (h *WorkHandler) Delete(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 200, "message": "success"})
 }
 
-// Run 立即执行工作区任务（MVP：异步执行模拟）
+// Run 立即执行工作区任务（多 Agent 协商）
 func (h *WorkHandler) Run(c *gin.Context) {
+	userID, _ := c.Get("userId")
+	userIDStr, _ := userID.(string)
+	id := c.Param("id")
+
+	work, claimed, err := h.runner.ClaimWork(id, userIDStr)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "workspace not found"})
+		return
+	}
+	if !claimed {
+		c.JSON(http.StatusConflict, gin.H{"error": "workspace task is running"})
+		return
+	}
+
+	run, runErr := h.runner.ExecuteClaimed(c.Request.Context(), &work, "manual")
+	if runErr != nil {
+		// 返回最新状态给前端，便于提示
+		var latest models.Work
+		_ = h.db.Where("id = ? AND user_id = ?", id, userIDStr).First(&latest).Error
+		var runPayload interface{}
+		if run != nil {
+			runPayload = toAgentRunResponse(*run)
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": runErr.Error(),
+			"data": gin.H{
+				"work": latest,
+				"run":  runPayload,
+			},
+		})
+		return
+	}
+
+	var latest models.Work
+	_ = h.db.Where("id = ? AND user_id = ?", id, userIDStr).First(&latest).Error
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "success",
+		"data": gin.H{
+			"work": latest,
+			"run":  toAgentRunResponse(*run),
+		},
+	})
+}
+
+func dedupeIDs(ids []string) []string {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(ids))
+	result := make([]string, 0, len(ids))
+	for _, id := range ids {
+		trimmed := strings.TrimSpace(id)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		result = append(result, trimmed)
+	}
+	return result
+}
+
+// BatchRun 批量执行工作区任务（并发）
+func (h *WorkHandler) BatchRun(c *gin.Context) {
+	userID, _ := c.Get("userId")
+	userIDStr, _ := userID.(string)
+
+	var req BatchRunRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ids := dedupeIDs(req.IDs)
+	if len(ids) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ids is required"})
+		return
+	}
+	if len(ids) > 50 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "batch size exceeded, max 50"})
+		return
+	}
+
+	maxParallel := req.MaxParallel
+	if maxParallel <= 0 {
+		maxParallel = 3
+	}
+	if maxParallel > 10 {
+		maxParallel = 10
+	}
+
+	type indexedItem struct {
+		index int
+		item  BatchRunItemResponse
+	}
+
+	sem := make(chan struct{}, maxParallel)
+	resultCh := make(chan indexedItem, len(ids))
+	var wg sync.WaitGroup
+
+	for idx, id := range ids {
+		wg.Add(1)
+		go func(index int, workID string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			result := BatchRunItemResponse{
+				WorkID: workID,
+				Status: "failed",
+			}
+
+			work, claimed, err := h.runner.ClaimWork(workID, userIDStr)
+			if err != nil {
+				result.Status = "not_found"
+				result.Error = "workspace not found"
+				resultCh <- indexedItem{index: index, item: result}
+				return
+			}
+			if !claimed {
+				result.Status = "busy"
+				result.Error = "workspace task is running"
+				resultCh <- indexedItem{index: index, item: result}
+				return
+			}
+
+			run, runErr := h.runner.ExecuteClaimed(c.Request.Context(), &work, "batch")
+			if run != nil {
+				runResp := toAgentRunResponse(*run)
+				result.Run = &runResp
+			}
+			if runErr != nil {
+				result.Status = "failed"
+				if result.Run != nil && strings.TrimSpace(result.Run.ErrorMessage) != "" {
+					result.Error = result.Run.ErrorMessage
+				} else {
+					result.Error = runErr.Error()
+				}
+				resultCh <- indexedItem{index: index, item: result}
+				return
+			}
+
+			result.Status = "completed"
+			resultCh <- indexedItem{index: index, item: result}
+		}(idx, id)
+	}
+
+	wg.Wait()
+	close(resultCh)
+
+	items := make([]BatchRunItemResponse, len(ids))
+	successCount := 0
+	failedCount := 0
+	busyCount := 0
+	notFoundCount := 0
+	for payload := range resultCh {
+		items[payload.index] = payload.item
+		switch payload.item.Status {
+		case "completed":
+			successCount++
+		case "busy":
+			busyCount++
+			failedCount++
+		case "not_found":
+			notFoundCount++
+			failedCount++
+		default:
+			failedCount++
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "success",
+		"data": gin.H{
+			"items":         items,
+			"successCount":  successCount,
+			"failedCount":   failedCount,
+			"busyCount":     busyCount,
+			"notFoundCount": notFoundCount,
+		},
+	})
+}
+
+// ListRuns 获取工作区任务执行记录
+func (h *WorkHandler) ListRuns(c *gin.Context) {
 	userID, _ := c.Get("userId")
 	userIDStr, _ := userID.(string)
 	id := c.Param("id")
@@ -359,30 +528,20 @@ func (h *WorkHandler) Run(c *gin.Context) {
 		return
 	}
 
-	now := time.Now()
-	work.AsyncStatus = "running"
-	work.LastRunAt = &now
-	work.Status = "in_progress"
-	work.ResultSummary = buildExecutionSummary(work, now)
+	limit := 20
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err == nil && value > 0 && value <= 100 {
+			limit = value
+		}
+	}
 
-	nextRunAt, err := computeNextRunAt(work.TriggerType, work.TriggerValue, work.Timezone, now)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if work.TriggerType == "once" {
-		nextRunAt = nil
-	}
-	work.NextRunAt = nextRunAt
-	if work.NextRunAt != nil && work.TriggerType != "once" {
-		work.AsyncStatus = "scheduled"
-	} else {
-		work.AsyncStatus = "completed"
-	}
-	work.Status = "done"
-	work.UpdatedAt = now
-
-	if err := h.db.Save(&work).Error; err != nil {
+	var runs []models.AgentRun
+	if err := h.db.
+		Where("work_id = ? AND user_id = ?", id, userIDStr).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&runs).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -390,6 +549,34 @@ func (h *WorkHandler) Run(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    200,
 		"message": "success",
-		"data":    work,
+		"data":    toAgentRunResponses(runs),
+	})
+}
+
+// GetRun 获取单次执行记录详情
+func (h *WorkHandler) GetRun(c *gin.Context) {
+	userID, _ := c.Get("userId")
+	userIDStr, _ := userID.(string)
+	workID := c.Param("id")
+	runID := c.Param("runId")
+
+	var work models.Work
+	if err := h.db.Where("id = ? AND user_id = ?", workID, userIDStr).First(&work).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "workspace not found"})
+		return
+	}
+
+	var run models.AgentRun
+	if err := h.db.
+		Where("id = ? AND work_id = ? AND user_id = ?", runID, workID, userIDStr).
+		First(&run).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "run not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "success",
+		"data":    toAgentRunResponse(run),
 	})
 }

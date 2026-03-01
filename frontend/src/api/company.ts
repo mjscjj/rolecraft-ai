@@ -20,11 +20,50 @@ export interface CompanyStats {
 
 export interface CompanyOutcome {
   id: string;
-  name: string;
-  type: string;
-  asyncStatus: string;
+  workId: string;
+  workName?: string;
+  status: string;
+  confidence: number;
   resultSummary: string;
   updatedAt: string;
+}
+
+export interface CompanyDelivery {
+  id: string;
+  workId: string;
+  workName?: string;
+  summary: string;
+  finalAnswer: string;
+  confidence: number;
+  stepCount: number;
+  nextActions: string[];
+  evidence: string[];
+  updatedAt: string;
+}
+
+export type CompanyExportFormat = 'json' | 'markdown';
+
+export interface CompanyExportFilters {
+  keyword?: string;
+  minConfidence?: number;
+  from?: string;
+  to?: string;
+}
+
+export interface CompanyExportRecord {
+  id: string;
+  companyId: string;
+  companyName: string;
+  format: CompanyExportFormat | string;
+  fileName: string;
+  deliveryCount: number;
+  filters?: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CompanyExportDetail extends CompanyExportRecord {
+  content: string;
 }
 
 export const companyApi = {
@@ -46,9 +85,41 @@ export const companyApi = {
     }
   },
 
-  get: async (id: string): Promise<{ company: Company; stats: CompanyStats; recentOutcomes: CompanyOutcome[] }> => {
+  get: async (id: string): Promise<{ company: Company; stats: CompanyStats; recentOutcomes: CompanyOutcome[]; deliveryBoard: CompanyDelivery[] }> => {
     try {
-      const res = await client.get<ApiResponse<{ company: Company; stats: CompanyStats; recentOutcomes: CompanyOutcome[] }>>(`/companies/${id}`);
+      const res = await client.get<ApiResponse<{ company: Company; stats: CompanyStats; recentOutcomes: CompanyOutcome[]; deliveryBoard: CompanyDelivery[] }>>(`/companies/${id}`);
+      return res.data.data;
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
+
+  listExports: async (id: string, limit = 20): Promise<CompanyExportRecord[]> => {
+    try {
+      const res = await client.get<ApiResponse<CompanyExportRecord[]>>(`/companies/${id}/exports`, {
+        params: { limit },
+      });
+      return res.data.data || [];
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
+
+  getExport: async (id: string, exportId: string): Promise<CompanyExportDetail> => {
+    try {
+      const res = await client.get<ApiResponse<CompanyExportDetail>>(`/companies/${id}/exports/${exportId}`);
+      return res.data.data;
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
+
+  createExport: async (
+    id: string,
+    payload: CompanyExportFilters & { format: CompanyExportFormat }
+  ): Promise<CompanyExportDetail> => {
+    try {
+      const res = await client.post<ApiResponse<CompanyExportDetail>>(`/companies/${id}/exports`, payload);
       return res.data.data;
     } catch (error) {
       throw handleApiError(error);

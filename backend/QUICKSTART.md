@@ -11,7 +11,7 @@ ENV=development
 PORT=8080
 DATABASE_URL=/Users/claw/.openclaw/workspace-work/rolecraft-ai/backend/rolecraft.db
 JWT_SECRET=your-secret-key-change-in-production
-ANYTHINGLLM_URL=http://150.109.21.115:3001
+ANYTHINGLLM_URL=http://43.134.234.4:3001
 ANYTHINGLLM_KEY=sk-WaUmgZsMxgeHOpp8SJxK1rmVQxiwfiDJ
 EOF
 ```
@@ -88,7 +88,7 @@ export SLUG="your-workspace-slug"
 
 ```bash
 # Test direct AnythingLLM API
-curl -X POST "http://150.109.21.115:3001/api/v1/workspace/your-slug/chat" \
+curl -X POST "http://43.134.234.4:3001/api/v1/workspace/your-slug/chat" \
   -H "Authorization: Bearer sk-WaUmgZsMxgeHOpp8SJxK1rmVQxiwfiDJ" \
   -H "Content-Type: application/json" \
   -d '{"message": "Hello", "mode": "chat"}'

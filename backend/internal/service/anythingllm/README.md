@@ -24,7 +24,7 @@ import "rolecraft-ai/backend/internal/service/anythingllm"
 
 // 使用默认配置
 client := anythingllm.NewAnythingLLMClient(
-    "http://150.109.21.115:3001/api",
+    "http://43.134.234.4:3001/api",
     "sk-WaUmgZsMxgeHOpp8SJxK1rmVQxiwfiDJ",
 )
 ```
@@ -227,7 +227,7 @@ client := anythingllm.NewAnythingLLMClientWithConfig(config)
 ## AnythingLLM API 参考
 
 - 官方文档：https://anythingllm.com/api
-- 服务器地址：`http://150.109.21.115:3001/api`
+- 服务器地址：`http://43.134.234.4:3001/api`
 
 ## 许可证
 

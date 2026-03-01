@@ -12,7 +12,7 @@ Add the following environment variables to your `.env` file:
 
 ```bash
 # AnythingLLM Configuration
-ANYTHINGLLM_URL=http://150.109.21.115:3001
+ANYTHINGLLM_URL=http://43.134.234.4:3001
 ANYTHINGLLM_KEY=sk-WaUmgZsMxgeHOpp8SJxK1rmVQxiwfiDJ
 ```
 
@@ -173,7 +173,7 @@ User → RoleCraft API → AnythingLLM → RAG Processing → Response
 
 ### Chat Endpoint
 ```bash
-curl -X POST "http://150.109.21.115:3001/api/v1/workspace/{slug}/chat" \
+curl -X POST "http://43.134.234.4:3001/api/v1/workspace/{slug}/chat" \
   -H "Authorization: Bearer sk-WaUmgZsMxgeHOpp8SJxK1rmVQxiwfiDJ" \
   -H "Content-Type: application/json" \
   -d '{"message": "你好", "mode": "chat"}'
@@ -181,7 +181,7 @@ curl -X POST "http://150.109.21.115:3001/api/v1/workspace/{slug}/chat" \
 
 ### Stream Chat Endpoint
 ```bash
-curl -X POST "http://150.109.21.115:3001/api/v1/workspace/{slug}/stream-chat" \
+curl -X POST "http://43.134.234.4:3001/api/v1/workspace/{slug}/stream-chat" \
   -H "Authorization: Bearer sk-WaUmgZsMxgeHOpp8SJxK1rmVQxiwfiDJ" \
   -H "Content-Type: application/json" \
   -d '{"message": "你好", "mode": "chat"}'

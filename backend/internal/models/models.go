@@ -157,6 +157,39 @@ type Work struct {
 	UpdatedAt     time.Time  `json:"updatedAt"`
 }
 
+// AgentRun 多 Agent 协商执行记录
+type AgentRun struct {
+	ID            string     `json:"id" gorm:"primaryKey"`
+	WorkID        string     `json:"workId" gorm:"index;not null"`
+	UserID        string     `json:"userId" gorm:"index;not null"`
+	CompanyID     string     `json:"companyId" gorm:"index"`
+	TriggerSource string     `json:"triggerSource"`          // manual/scheduler
+	Status        string     `json:"status" gorm:"index"`    // running/completed/failed
+	Summary       string     `json:"summary"`                // 执行摘要
+	FinalAnswer   string     `json:"finalAnswer"`            // 最终答案
+	Confidence    float64    `json:"confidence"`             // 置信度
+	Trace         JSON       `json:"trace" gorm:"type:text"` // 协商轨迹 JSON
+	ErrorMessage  string     `json:"errorMessage"`           // 错误信息
+	StartedAt     *time.Time `json:"startedAt"`              // 开始时间
+	FinishedAt    *time.Time `json:"finishedAt"`             // 结束时间
+	CreatedAt     time.Time  `json:"createdAt"`
+	UpdatedAt     time.Time  `json:"updatedAt"`
+}
+
+// CompanyExport 公司交付导出归档
+type CompanyExport struct {
+	ID            string    `json:"id" gorm:"primaryKey"`
+	CompanyID     string    `json:"companyId" gorm:"index;not null"`
+	UserID        string    `json:"userId" gorm:"index;not null"`
+	Format        string    `json:"format" gorm:"index;not null"` // json/markdown
+	FileName      string    `json:"fileName"`
+	DeliveryCount int       `json:"deliveryCount"`
+	Filters       JSON      `json:"filters" gorm:"type:text"`
+	Content       string    `json:"content" gorm:"type:text"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+}
+
 // RoleInstall 角色安装记录（市场 -> 个人/公司）
 type RoleInstall struct {
 	ID              string    `json:"id" gorm:"primaryKey"`
@@ -179,6 +212,10 @@ func (ChatSession) TableName() string { return "chat_sessions" }
 func (Message) TableName() string     { return "messages" }
 func (Company) TableName() string     { return "companies" }
 func (Work) TableName() string        { return "works" }
+func (AgentRun) TableName() string    { return "agent_runs" }
+func (CompanyExport) TableName() string {
+	return "company_exports"
+}
 func (RoleInstall) TableName() string { return "role_installs" }
 
 // NewUUID 生成新 UUID 字符串

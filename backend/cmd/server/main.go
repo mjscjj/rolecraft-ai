@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"rolecraft-ai/internal/database"
 	"rolecraft-ai/internal/models"
 	promptSvc "rolecraft-ai/internal/service/prompt"
+	workspaceSvc "rolecraft-ai/internal/service/workspace"
 )
 
 // ServiceStartTime 服务启动时间
@@ -59,6 +61,8 @@ func main() {
 		&models.Role{},
 		&models.Company{},
 		&models.Work{},
+		&models.AgentRun{},
+		&models.CompanyExport{},
 		&models.RoleInstall{},
 		&models.Skill{},
 		&models.Document{},
@@ -78,6 +82,11 @@ func main() {
 			log.Fatalf("Failed to add chat_sessions.model_config column: %v", err)
 		}
 	}
+
+	workspaceRunner := workspaceSvc.NewRunner(db, cfg)
+	workspaceScheduler := workspaceSvc.NewScheduler(db, workspaceRunner, 30*time.Second)
+	workspaceScheduler.Start(context.Background())
+	defer workspaceScheduler.Stop()
 
 	// 设置 Gin 模式
 	if cfg.Env == "production" {
@@ -155,23 +164,32 @@ func main() {
 			authorized.GET("/companies", companyHandler.List)
 			authorized.POST("/companies", companyHandler.Create)
 			authorized.GET("/companies/:id", companyHandler.Get)
+			authorized.GET("/companies/:id/exports", companyHandler.ListExports)
+			authorized.GET("/companies/:id/exports/:exportId", companyHandler.GetExport)
+			authorized.POST("/companies/:id/exports", companyHandler.CreateExport)
 			authorized.PUT("/companies/:id", companyHandler.Update)
 			authorized.DELETE("/companies/:id", companyHandler.Delete)
 
 			// 工作区（异步执行中心）
-			workHandler := handler.NewWorkHandler(db)
+			workHandler := handler.NewWorkHandler(db, workspaceRunner)
 			// 新命名
 			authorized.GET("/workspaces", workHandler.List)
 			authorized.POST("/workspaces", workHandler.Create)
 			authorized.PUT("/workspaces/:id", workHandler.Update)
 			authorized.DELETE("/workspaces/:id", workHandler.Delete)
 			authorized.POST("/workspaces/:id/run", workHandler.Run)
+			authorized.POST("/workspaces/batch/run", workHandler.BatchRun)
+			authorized.GET("/workspaces/:id/runs", workHandler.ListRuns)
+			authorized.GET("/workspaces/:id/runs/:runId", workHandler.GetRun)
 			// 兼容旧命名 /works
 			authorized.GET("/works", workHandler.List)
 			authorized.POST("/works", workHandler.Create)
 			authorized.PUT("/works/:id", workHandler.Update)
 			authorized.DELETE("/works/:id", workHandler.Delete)
 			authorized.POST("/works/:id/run", workHandler.Run)
+			authorized.POST("/works/batch/run", workHandler.BatchRun)
+			authorized.GET("/works/:id/runs", workHandler.ListRuns)
+			authorized.GET("/works/:id/runs/:runId", workHandler.GetRun)
 
 			// 文档
 			docHandler := handler.NewDocumentHandler(db)

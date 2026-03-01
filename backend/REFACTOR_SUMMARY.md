@@ -53,7 +53,7 @@ type Config struct {
 ```
 
 **Default Values:**
-- `ANYTHINGLLM_URL`: `http://150.109.21.115:3001`
+- `ANYTHINGLLM_URL`: `http://43.134.234.4:3001`
 - `ANYTHINGLLM_KEY`: `sk-WaUmgZsMxgeHOpp8SJxK1rmVQxiwfiDJ`
 
 #### 3. Models (`internal/models/models.go`)
@@ -166,7 +166,7 @@ DATABASE_URL=/path/to/rolecraft.db
 JWT_SECRET=your-secret-key-change-in-production
 
 # AnythingLLM
-ANYTHINGLLM_URL=http://150.109.21.115:3001
+ANYTHINGLLM_URL=http://43.134.234.4:3001
 ANYTHINGLLM_KEY=sk-WaUmgZsMxgeHOpp8SJxK1rmVQxiwfiDJ
 ```
 

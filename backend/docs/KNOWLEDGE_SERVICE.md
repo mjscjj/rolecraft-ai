@@ -95,7 +95,7 @@ curl -X POST "http://localhost:8080/api/v1/documents/search" \
 
 ```bash
 # AnythingLLM 配置
-ANYTHINGLLM_BASE_URL=http://150.109.21.115:3001/api/v1
+ANYTHINGLLM_BASE_URL=http://43.134.234.4:3001/api/v1
 ANYTHINGLLM_API_KEY=sk-your-api-key-here
 ANYTHINGLLM_WORKSPACE=user_001
 ```
@@ -103,7 +103,7 @@ ANYTHINGLLM_WORKSPACE=user_001
 ### 默认值
 
 如果未配置，系统使用以下默认值：
-- `ANYTHINGLLM_BASE_URL`: `http://150.109.21.115:3001/api/v1`
+- `ANYTHINGLLM_BASE_URL`: `http://43.134.234.4:3001/api/v1`
 - `ANYTHINGLLM_WORKSPACE`: `user_001`
 - `ANYTHINGLLM_API_KEY`: 必须配置，否则 API 调用会失败
 
@@ -274,5 +274,5 @@ curl "http://localhost:8080/api/v1/documents?status=failed"
 
 ## 参考
 
-- [AnythingLLM API 文档](http://150.109.21.115:3001/api/v1)
+- [AnythingLLM API 文档](http://43.134.234.4:3001/api/v1)
 - [AnythingLLM GitHub](https://github.com/Mintplex-Labs/anything-llm)
