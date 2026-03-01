@@ -39,7 +39,7 @@ func TestDocumentFlow(t *testing.T) {
 
 	// 2. 上传文档
 	t.Log("=== Step 2: Upload Document ===")
-	docID, err := uploadDocument("./test.pdf")
+	docID, err := uploadDocument("./test.txt")
 	if err != nil {
 		t.Fatalf("Failed to upload document: %v", err)
 	}
@@ -183,8 +183,8 @@ func login() (string, error) {
 func uploadDocument(filePath string) (string, error) {
 	// 创建测试文件
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		// 创建测试 PDF 文件
-		if err := createTestPDF(filePath); err != nil {
+		// 创建稳定的文本测试文件，避免空 PDF 导致 AnythingLLM 无法解析
+		if err := createTestDocument(filePath); err != nil {
 			return "", fmt.Errorf("failed to create test file: %w", err)
 		}
 	}
@@ -198,7 +198,7 @@ func uploadDocument(filePath string) (string, error) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
-	part, err := writer.CreateFormFile("file", "test.pdf")
+	part, err := writer.CreateFormFile("file", "test.txt")
 	if err != nil {
 		return "", err
 	}
@@ -247,12 +247,10 @@ func uploadDocument(filePath string) (string, error) {
 	return id, nil
 }
 
-// createTestPDF 创建测试 PDF 文件
-func createTestPDF(path string) error {
-	// 简单的 PDF 文件头 (最小有效 PDF)
-	pdfContent := []byte("%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\nxref\n0 4\n0000000000 65535 f\n0000000009 00000 n\n0000000058 00000 n\n0000000115 00000 n\ntrailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n193\n%%EOF")
-
-	return os.WriteFile(path, pdfContent, 0644)
+// createTestDocument 创建测试文档
+func createTestDocument(path string) error {
+	content := []byte("RoleCraft integration test document.\nThis text should be indexed by AnythingLLM.\n")
+	return os.WriteFile(path, content, 0644)
 }
 
 // getDocumentStatus 获取文档状态

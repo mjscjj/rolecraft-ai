@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -24,15 +25,24 @@ type RoleHandler struct {
 	anythingllmURL string
 	anythingllmKey string
 	openaiKey      string
+	anything       *anythingllm.Orchestrator
 }
 
 // NewRoleHandler 创建角色处理器
 func NewRoleHandler(db *gorm.DB, cfg *config.Config) *RoleHandler {
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
 	return &RoleHandler{
 		db:             db,
 		anythingllmURL: cfg.AnythingLLMURL,
 		anythingllmKey: cfg.AnythingLLMKey,
 		openaiKey:      cfg.OpenAIKey,
+		anything: anythingllm.NewOrchestrator(cfg.AnythingLLMURL, cfg.AnythingLLMKey, anythingllm.OrchestratorConfig{
+			DefaultProvider: "openrouter",
+			DefaultModel:    cfg.OpenRouterModel,
+			OpenRouterKey:   cfg.OpenRouterKey,
+		}),
 	}
 }
 
@@ -1194,29 +1204,25 @@ func (h *RoleHandler) getEnhancedTemplatesList() []EnhancedRoleTemplate {
 
 // syncToAnythingLLM 同步角色到 AnythingLLM
 func (h *RoleHandler) syncToAnythingLLM(role models.Role) {
-	if strings.TrimSpace(h.anythingllmURL) == "" || strings.TrimSpace(h.anythingllmKey) == "" {
+	if h.anything == nil || !h.anything.Enabled() {
 		return
 	}
 
-	client := anythingllm.NewAnythingLLMClient(h.anythingllmURL, h.anythingllmKey)
-	slug := client.GetWorkspaceSlug(role.ID)
+	slug := anythingllm.UserWorkspaceSlug(role.ID)
 
-	_, err := client.GetWorkspaceBySlug(slug)
+	ws, err := h.anything.EnsureWorkspaceBySlug(context.Background(), slug, fmt.Sprintf("Role: %s", role.Name), role.SystemPrompt)
 	if err != nil {
-		_, err = client.CreateWorkspaceBySlug(slug, fmt.Sprintf("Role: %s", role.Name), role.SystemPrompt)
-		if err != nil {
-			log.Printf("⚠️ 角色 [%s] 创建 AnythingLLM Workspace 失败：%v", role.Name, err)
-			return
-		}
-		log.Printf("✅ 角色 [%s] 已创建 AnythingLLM Workspace", role.Name)
-	} else {
-		err = client.UpdateWorkspaceSystemPrompt(slug, role.SystemPrompt)
-		if err != nil {
-			log.Printf("⚠️ 角色 [%s] 更新 AnythingLLM Workspace 失败：%v", role.Name, err)
-		} else {
-			log.Printf("✅ 角色 [%s] 已更新 AnythingLLM Workspace", role.Name)
-		}
+		log.Printf("⚠️ 角色 [%s] 创建 AnythingLLM Workspace 失败：%v", role.Name, err)
+		return
 	}
+	if ws != nil && strings.TrimSpace(ws.Slug) != "" {
+		slug = strings.TrimSpace(ws.Slug)
+	}
+	if err := h.anything.UpdateWorkspaceSystemPrompt(context.Background(), slug, role.SystemPrompt); err != nil {
+		log.Printf("⚠️ 角色 [%s] 更新 AnythingLLM Workspace 失败：%v", role.Name, err)
+		return
+	}
+	log.Printf("✅ 角色 [%s] 已同步到 AnythingLLM Workspace", role.Name)
 }
 
 // Chat 与角色对话

@@ -10,22 +10,26 @@ type Client struct {
 
 // Workspace represents an AnythingLLM workspace
 type Workspace struct {
-	ID          int64     `json:"id"`
-	Name        string    `json:"name"`
-	Slug        string    `json:"slug"`
-	Users       []int64   `json:"users"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
-	OpenAiApi   string    `json:"openAiApi"`
-	OpenAiModel string    `json:"openAiModel"`
-	Status      string    `json:"status"`
+	ID            int64     `json:"id"`
+	Name          string    `json:"name"`
+	Slug          string    `json:"slug"`
+	Users         []int64   `json:"users"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+	OpenAiApi     string    `json:"openAiApi"`
+	OpenAiModel   string    `json:"openAiModel"`
+	ChatProvider  string    `json:"chatProvider"`
+	ChatModel     string    `json:"chatModel"`
+	AgentProvider string    `json:"agentProvider"`
+	AgentModel    string    `json:"agentModel"`
+	Status        string    `json:"status"`
 }
 
 // CreateWorkspaceRequest represents the request to create a workspace
 type CreateWorkspaceRequest struct {
-	Name       string `json:"name"`
-	Slug       string `json:"slug,omitempty"`
-	Users      []int  `json:"users,omitempty"`
+	Name         string `json:"name"`
+	Slug         string `json:"slug,omitempty"`
+	Users        []int  `json:"users,omitempty"`
 	SystemPrompt string `json:"systemPrompt,omitempty"`
 }
 
@@ -52,12 +56,12 @@ type ChatRequest struct {
 
 // ChatResponse represents a chat response
 type ChatResponse struct {
-	ID         string `json:"id"`
-	Type       string `json:"type"` // "textResponse" or "textResponseChunk"
-	Response   string `json:"response"`
-	SourceDoc  string `json:"sourceDoc,omitempty"`
+	ID          string        `json:"id"`
+	Type        string        `json:"type"` // "textResponse" or "textResponseChunk"
+	Response    string        `json:"response"`
+	SourceDoc   string        `json:"sourceDoc,omitempty"`
 	Attachments []interface{} `json:"attachments,omitempty"`
-	Action     string `json:"action,omitempty"`
+	Action      string        `json:"action,omitempty"`
 }
 
 // StreamChunk represents a streaming response chunk
@@ -123,13 +127,13 @@ type VectorSearchResponse struct {
 
 // ChatHistoryItem represents a single chat history item
 type ChatHistoryItem struct {
-	ID        int64     `json:"id"`
-	Workspace int64     `json:"workspaceId"`
-	User      int64     `json:"user_id"`
-	Prompt    string    `json:"prompt"`
-	Response  string    `json:"response"`
-	Attachment string  `json:"attachment,omitempty"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID         int64     `json:"id"`
+	Workspace  int64     `json:"workspaceId"`
+	User       int64     `json:"user_id"`
+	Prompt     string    `json:"prompt"`
+	Response   string    `json:"response"`
+	Attachment string    `json:"attachment,omitempty"`
+	CreatedAt  time.Time `json:"createdAt"`
 }
 
 // GetChatHistoryResponse represents the response from getting chat history
@@ -166,11 +170,11 @@ type APIError struct {
 
 // ClientConfig holds configuration for the AnythingLLM client
 type ClientConfig struct {
-	BaseURL       string
-	APIKey        string
-	Timeout       time.Duration
-	MaxRetries    int
-	RetryDelay    time.Duration
+	BaseURL    string
+	APIKey     string
+	Timeout    time.Duration
+	MaxRetries int
+	RetryDelay time.Duration
 }
 
 // DefaultClientConfig returns a default client configuration

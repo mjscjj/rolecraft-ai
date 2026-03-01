@@ -1,10 +1,9 @@
 package handler
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -23,14 +22,23 @@ type ChatHandler struct {
 	db          *gorm.DB
 	config      *config.Config
 	thinkingSvc *thinking.Service
+	anything    *anythingllm.Orchestrator
 }
 
 // NewChatHandler 创建对话处理器
 func NewChatHandler(db *gorm.DB, cfg *config.Config) *ChatHandler {
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
 	return &ChatHandler{
 		db:          db,
 		config:      cfg,
 		thinkingSvc: thinking.NewService(),
+		anything: anythingllm.NewOrchestrator(cfg.AnythingLLMURL, cfg.AnythingLLMKey, anythingllm.OrchestratorConfig{
+			DefaultProvider: "openrouter",
+			DefaultModel:    cfg.OpenRouterModel,
+			OpenRouterKey:   cfg.OpenRouterKey,
+		}),
 	}
 }
 
@@ -211,15 +219,7 @@ func (h *ChatHandler) DeleteSession(c *gin.Context) {
 }
 
 func normalizeUserWorkspaceSlug(userID string) string {
-	raw := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(userID), "-", ""))
-	if raw == "" {
-		return "user_default"
-	}
-	slug := "user_" + raw
-	if len(slug) > 20 {
-		return slug[:20]
-	}
-	return slug
+	return anythingllm.UserWorkspaceSlug(userID)
 }
 
 // getAnythingLLMSlug 获取会话的 AnythingLLM Slug
@@ -254,25 +254,19 @@ func (h *ChatHandler) ensureAnythingLLMWorkspace(userID string, session *models.
 		return "", err
 	}
 
-	if strings.TrimSpace(h.config.AnythingLLMURL) == "" || strings.TrimSpace(h.config.AnythingLLMKey) == "" {
+	if h.anything == nil || !h.anything.Enabled() {
 		return "", fmt.Errorf("anythingllm is not configured")
 	}
-
-	client := anythingllm.NewAnythingLLMClient(h.config.AnythingLLMURL, h.config.AnythingLLMKey)
-
-	// 确保 workspace 存在（不存在就创建）
-	if _, err := client.GetWorkspaceBySlug(slug); err != nil {
-		created, createErr := client.CreateWorkspaceBySlug(slug, slug, "")
-		if createErr != nil {
-			return "", fmt.Errorf("failed to ensure workspace: %w", createErr)
-		}
-		if created != nil && strings.TrimSpace(created.Slug) != "" {
-			slug = strings.TrimSpace(created.Slug)
-		}
+	ws, err := h.anything.EnsureWorkspaceBySlug(context.Background(), slug, slug, "")
+	if err != nil {
+		return "", fmt.Errorf("failed to ensure workspace: %w", err)
+	}
+	if ws != nil && strings.TrimSpace(ws.Slug) != "" {
+		slug = strings.TrimSpace(ws.Slug)
 	}
 
 	// 回写 session，避免重复推断
-	if session.AnythingLLMSlug == "" {
+	if session.AnythingLLMSlug != slug {
 		session.AnythingLLMSlug = slug
 		_ = h.db.Save(session).Error
 	}
@@ -280,157 +274,55 @@ func (h *ChatHandler) ensureAnythingLLMWorkspace(userID string, session *models.
 	return slug, nil
 }
 
-func (h *ChatHandler) postAnythingLLM(path string, payload map[string]interface{}) error {
-	if strings.TrimSpace(h.config.AnythingLLMURL) == "" || strings.TrimSpace(h.config.AnythingLLMKey) == "" {
-		return fmt.Errorf("anythingllm is not configured")
+func (h *ChatHandler) resolveRuntimeProvider(session models.ChatSession) string {
+	cfg := h.parseSessionModelConfig(session)
+	for _, key := range []string{"provider", "chatProvider"} {
+		if value, ok := cfg[key].(string); ok && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
 	}
-
-	url := fmt.Sprintf("%s/api/v1%s", strings.TrimRight(h.config.AnythingLLMURL, "/"), path)
-	data, _ := json.Marshal(payload)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(data))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+h.config.AnythingLLMKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("anythingllm request failed (%s): %s", path, string(body))
-	}
-	return nil
+	return "openrouter"
 }
 
-func (h *ChatHandler) configureAnythingLLMWorkspace(slug string) error {
-	if slug == "" {
-		return nil
+func (h *ChatHandler) resolveRuntimeModel(session models.ChatSession) string {
+	cfg := h.parseSessionModelConfig(session)
+	for _, key := range []string{"model", "modelId", "chatModel"} {
+		if value, ok := cfg[key].(string); ok && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
 	}
-
-	openRouterKey := strings.TrimSpace(h.config.OpenRouterKey)
-	if openRouterKey == "" {
-		return nil
+	if strings.TrimSpace(h.config.OpenRouterModel) != "" {
+		return strings.TrimSpace(h.config.OpenRouterModel)
 	}
-
-	// 把 OpenRouter key 写入 AnythingLLM 系统环境（幂等）
-	_ = h.postAnythingLLM("/system/update-env", map[string]interface{}{
-		"OpenRouterApiKey": openRouterKey,
-	})
-
-	model := strings.TrimSpace(h.config.OpenRouterModel)
-	if model == "" {
-		model = "google/gemini-3-flash-preview"
-	}
-
-	return h.postAnythingLLM(fmt.Sprintf("/workspace/%s/update", slug), map[string]interface{}{
-		"chatProvider":  "openrouter",
-		"chatModel":     model,
-		"agentProvider": "openrouter",
-		"agentModel":    model,
-	})
+	return ""
 }
 
 // callAnythingLLM 调用 AnythingLLM Chat API
-func (h *ChatHandler) callAnythingLLMWithMode(slug, message, apiKey string, mode ChatMode) (*AnythingLLMResult, error) {
-	url := fmt.Sprintf("%s/api/v1/workspace/%s/chat", h.config.AnythingLLMURL, slug)
-	finalMessage := strings.TrimSpace(message)
-	if mode == ChatModeAgent && !strings.HasPrefix(finalMessage, "@agent") {
-		finalMessage = "@agent " + finalMessage
+func (h *ChatHandler) callAnythingLLMWithMode(session models.ChatSession, slug, message string, mode ChatMode, sessionID string) (*AnythingLLMResult, error) {
+	if h.anything == nil || !h.anything.Enabled() {
+		return nil, fmt.Errorf("anythingllm is not configured")
 	}
-
-	reqBody := AnythingLLMChatRequest{
-		Message: finalMessage,
-		Mode:    "chat",
+	modeValue := "chat"
+	if mode == ChatModeAgent {
+		modeValue = "agent"
 	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	if apiKey == "" {
-		apiKey = h.config.AnythingLLMKey
-	}
-
-	doChat := func(key string) (*AnythingLLMResult, int, string, error) {
-		req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-		if err != nil {
-			return nil, 0, "", fmt.Errorf("failed to create request: %w", err)
-		}
-
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+key)
-
-		client := &http.Client{Timeout: 60 * time.Second}
-		resp, err := client.Do(req)
-		if err != nil {
-			return nil, 0, "", fmt.Errorf("failed to send request: %w", err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			return nil, resp.StatusCode, string(body), nil
-		}
-
-		var chatResp AnythingLLMChatResponse
-		if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
-			return nil, 0, "", fmt.Errorf("failed to decode response: %w", err)
-		}
-		if chatResp.Error != "" {
-			return nil, http.StatusOK, chatResp.Error, nil
-		}
-		content := chatResp.TextResponse
-		if strings.TrimSpace(content) == "" {
-			content = chatResp.Response
-		}
-		if chatResp.TextResponse != "" {
-			content = chatResp.TextResponse
-		}
-		return &AnythingLLMResult{
-			Content:  content,
-			Sources:  chatResp.Sources,
-			Thoughts: chatResp.Thoughts,
-			Type:     chatResp.Type,
-		}, http.StatusOK, "", nil
-	}
-
-	result, status, msg, err := doChat(apiKey)
+	result, err := h.anything.Chat(context.Background(), anythingllm.ChatPayload{
+		WorkspaceSlug: slug,
+		Message:       message,
+		Mode:          modeValue,
+		Model:         h.resolveRuntimeModel(session),
+		Provider:      h.resolveRuntimeProvider(session),
+		SessionID:     sessionID,
+	})
 	if err != nil {
 		return nil, err
 	}
-	if status == http.StatusOK && msg == "" {
-		return result, nil
-	}
-
-	// If a per-session key is invalid/expired, fallback to system key once.
-	if apiKey != h.config.AnythingLLMKey && h.config.AnythingLLMKey != "" {
-		result, status, msg, err = doChat(h.config.AnythingLLMKey)
-		if err != nil {
-			return nil, err
-		}
-		if status == http.StatusOK && msg == "" {
-			return result, nil
-		}
-	}
-
-	if status != http.StatusOK {
-		return nil, fmt.Errorf("anythingllm API error: %s (status: %d)", msg, status)
-	}
-	return nil, fmt.Errorf("anythingllm chat error: %s", msg)
-}
-
-// callAnythingLLM 调用 AnythingLLM Chat API (兼容旧调用)
-func (h *ChatHandler) callAnythingLLM(slug, message, apiKey string) (string, error) {
-	result, err := h.callAnythingLLMWithMode(slug, message, apiKey, ChatModeChat)
-	if err != nil {
-		return "", err
-	}
-	return result.Content, nil
+	return &AnythingLLMResult{
+		Content:  result.Content,
+		Sources:  result.Sources,
+		Thoughts: result.Thoughts,
+		Type:     result.Type,
+	}, nil
 }
 
 func (h *ChatHandler) parseSessionModelConfig(session models.ChatSession) map[string]interface{} {
@@ -654,7 +546,7 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 
 	// 调用 AnythingLLM API
 	mode := h.resolveChatMode(session)
-	aiResult, err := h.callAnythingLLMWithMode(slug, composedMessage, h.resolveAnythingLLMKey(session), mode)
+	aiResult, err := h.callAnythingLLMWithMode(session, slug, composedMessage, mode, session.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "anythingllm API error: " + err.Error(),
@@ -739,10 +631,11 @@ func (h *ChatHandler) ChatStream(c *gin.Context) {
 	// 为保证稳定，服务端统一调用 chat API，再以 SSE 输出给前端。
 	mode := h.resolveChatMode(session)
 	aiResult, err := h.callAnythingLLMWithMode(
+		session,
 		slug,
 		h.buildComposedMessage(userIDStr, session, req.Content, req.Attachments),
-		h.resolveAnythingLLMKey(session),
 		mode,
+		session.ID,
 	)
 	if err != nil {
 		data := map[string]interface{}{"error": err.Error(), "done": true}
@@ -813,29 +706,9 @@ func (h *ChatHandler) SyncSession(c *gin.Context) {
 		return
 	}
 
-	// 调用 AnythingLLM 获取历史对话 API
-	// 注意：AnythingLLM 可能需要特定的 API 端点来获取历史
-	url := fmt.Sprintf("%s/api/v1/workspace/%s/chats", h.config.AnythingLLMURL, slug)
-
-	req, err := http.NewRequest("GET", url, nil)
+	history, err := h.anything.GetChatHistory(context.Background(), slug, 50)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create request"})
-		return
-	}
-
-	req.Header.Set("Authorization", "Bearer "+h.config.AnythingLLMKey)
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch from anythingllm"})
-		return
-	}
-	defer resp.Body.Close()
-
-	var history []map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&history); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse response"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch from anythingllm: " + err.Error()})
 		return
 	}
 
@@ -879,19 +752,20 @@ func (h *ChatHandler) DeleteMessage(c *gin.Context) {
 	// 同步删除到 AnythingLLM
 	// 注意：AnythingLLM 不支持删除单个消息，只能清空整个聊天历史
 	// 如果删除的是最后一条消息，可以选择清空 AnythingLLM 的聊天历史
-	if session.AnythingLLMSlug != "" {
+	if h.anything != nil && h.anything.Enabled() {
 		// 检查是否还有其他消息
 		var remainingCount int64
 		h.db.Model(&models.Message{}).Where("session_id = ?", sessionId).Count(&remainingCount)
 
 		// 如果没有其他消息了，清空 AnythingLLM 的聊天历史
 		if remainingCount == 0 {
-			// 使用 AnythingLLM client 删除聊天历史
-			anythingLLMClient := anythingllm.NewAnythingLLMClient(h.config.AnythingLLMURL, h.config.AnythingLLMKey)
-			if err := anythingLLMClient.DeleteChatHistory(userId.(string)); err != nil {
-				// 记录错误但不影响本地删除结果
-				// 可以在日志中记录：log.Printf("Failed to delete AnythingLLM chat history: %v", err)
+			slug := session.AnythingLLMSlug
+			if strings.TrimSpace(slug) == "" {
+				if uid, ok := userId.(string); ok {
+					slug = normalizeUserWorkspaceSlug(uid)
+				}
 			}
+			_ = h.anything.DeleteChatHistory(context.Background(), slug)
 		}
 	}
 
@@ -1430,7 +1304,7 @@ func (h *ChatHandler) RegenerateMessage(c *gin.Context) {
 	} else {
 		composed := h.buildComposedMessage(userID, session, content, nil)
 		mode := h.resolveChatMode(session)
-		aiResult, err = h.callAnythingLLMWithMode(slug, composed, h.resolveAnythingLLMKey(session), mode)
+		aiResult, err = h.callAnythingLLMWithMode(session, slug, composed, mode, session.ID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": "anythingllm API error: " + err.Error(),
@@ -1655,7 +1529,7 @@ func (h *ChatHandler) ChatStreamWithThinking(c *gin.Context) {
 		if !strings.HasPrefix(composed, "@agent") {
 			composed = "@agent " + composed
 		}
-		aiResult, err = h.callAnythingLLMWithMode(slug, composed, h.resolveAnythingLLMKey(session), mode)
+		aiResult, err = h.callAnythingLLMWithMode(session, slug, composed, mode, session.ID)
 		if err != nil {
 			// 发送错误
 			jsonData, _ := json.Marshal(map[string]interface{}{

@@ -3,6 +3,7 @@ package handler
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/hex"
@@ -23,6 +24,7 @@ import (
 	"gorm.io/gorm"
 
 	"rolecraft-ai/internal/models"
+	"rolecraft-ai/internal/service/anythingllm"
 )
 
 // AnythingLLMConfig AnythingLLM 配置
@@ -38,6 +40,7 @@ type DocumentHandler struct {
 	uploadDir   string
 	maxFileSize int64
 	config      AnythingLLMConfig
+	anything    *anythingllm.Orchestrator
 }
 
 // NewDocumentHandler 创建文档处理器
@@ -49,9 +52,11 @@ func NewDocumentHandler(db *gorm.DB) *DocumentHandler {
 	os.MkdirAll(uploadDir, 0755)
 
 	// AnythingLLM 配置
+	anythingBase := firstNonEmpty(os.Getenv("ANYTHINGLLM_BASE_URL"), os.Getenv("ANYTHINGLLM_URL"))
+	anythingKey := firstNonEmpty(os.Getenv("ANYTHINGLLM_API_KEY"), os.Getenv("ANYTHINGLLM_KEY"))
 	config := AnythingLLMConfig{
-		BaseURL:   normalizeAnythingLLMBaseURL(firstNonEmpty(os.Getenv("ANYTHINGLLM_BASE_URL"), os.Getenv("ANYTHINGLLM_URL"))),
-		APIKey:    firstNonEmpty(os.Getenv("ANYTHINGLLM_API_KEY"), os.Getenv("ANYTHINGLLM_KEY")),
+		BaseURL:   normalizeAnythingLLMBaseURL(anythingBase),
+		APIKey:    anythingKey,
 		Workspace: os.Getenv("ANYTHINGLLM_WORKSPACE"),
 	}
 
@@ -60,6 +65,12 @@ func NewDocumentHandler(db *gorm.DB) *DocumentHandler {
 		uploadDir:   uploadDir,
 		maxFileSize: 50 * 1024 * 1024,
 		config:      config,
+		anything: anythingllm.NewOrchestrator(anythingBase, anythingKey, anythingllm.OrchestratorConfig{
+			DefaultProvider: "openrouter",
+			DefaultModel:    os.Getenv("OPENROUTER_MODEL"),
+			OpenRouterKey:   os.Getenv("OPENROUTER_KEY"),
+			TavilyKey:       firstNonEmpty(os.Getenv("ANYTHINGLLM_TAVILY_API_KEY"), os.Getenv("TAVILY_API_KEY")),
+		}),
 	}
 }
 
@@ -88,7 +99,32 @@ func normalizeAnythingLLMBaseURL(raw string) string {
 }
 
 func (h *DocumentHandler) anythingLLMEnabled() bool {
-	return strings.TrimSpace(h.config.BaseURL) != "" && strings.TrimSpace(h.config.APIKey) != ""
+	return h.anything != nil && h.anything.Enabled()
+}
+
+func (h *DocumentHandler) workspaceSlugForUser(userID string) string {
+	return anythingllm.UserWorkspaceSlug(userID)
+}
+
+func (h *DocumentHandler) resolveWorkspaceSlug(owner string) string {
+	if !h.anythingLLMEnabled() {
+		return ""
+	}
+	candidate := strings.TrimSpace(owner)
+	if candidate == "" {
+		return ""
+	}
+	if !strings.HasPrefix(candidate, "user_") {
+		candidate = h.workspaceSlugForUser(candidate)
+	}
+	ws, err := h.anything.EnsureWorkspaceBySlug(context.Background(), candidate, candidate, "")
+	if err != nil {
+		return candidate
+	}
+	if ws != nil && strings.TrimSpace(ws.Slug) != "" {
+		return strings.TrimSpace(ws.Slug)
+	}
+	return candidate
 }
 
 var allowedTypes = map[string]bool{
@@ -330,64 +366,21 @@ func (h *DocumentHandler) uploadToAnythingLLM(filePath, userId string) (string, 
 	if !h.anythingLLMEnabled() {
 		return "", "", fmt.Errorf("anythingllm is not configured")
 	}
-
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	file, err := os.Open(filePath)
+	fileBytes, err := os.ReadFile(filePath)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to open file: %w", err)
+		return "", "", fmt.Errorf("failed to read file: %w", err)
 	}
-	defer file.Close()
 
-	part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+	workspaceSlug := h.resolveWorkspaceSlug(userId)
+	if strings.TrimSpace(workspaceSlug) == "" {
+		return "", "", fmt.Errorf("failed to resolve workspace slug")
+	}
+
+	fileId, err := h.anything.UploadDocumentToWorkspace(context.Background(), workspaceSlug, filepath.Base(filePath), fileBytes)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to create form file: %w", err)
+		return "", "", err
 	}
-
-	if _, err := io.Copy(part, file); err != nil {
-		return "", "", fmt.Errorf("failed to copy file: %w", err)
-	}
-
-	if err := writer.WriteField("addToWorkspaces", userId); err != nil {
-		return "", "", fmt.Errorf("failed to write workspace field: %w", err)
-	}
-
-	if err := writer.Close(); err != nil {
-		return "", "", fmt.Errorf("failed to close writer: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", h.config.BaseURL+"/document/upload", body)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", "Bearer "+h.config.APIKey)
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-
-	client := &http.Client{Timeout: 5 * time.Minute}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("anythingLLM upload failed: %s", string(respBody))
-	}
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return "", "", fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	fileId, _ := result["filename"].(string)
-	if fileId == "" {
+	if strings.TrimSpace(fileId) == "" {
 		fileId = filepath.Base(filePath)
 	}
 
@@ -420,42 +413,11 @@ func (h *DocumentHandler) updateEmbeddings(workspace string) error {
 	if !h.anythingLLMEnabled() {
 		return fmt.Errorf("anythingllm is not configured")
 	}
-
-	reqBody := map[string]interface{}{}
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
+	workspaceSlug := h.resolveWorkspaceSlug(workspace)
+	if strings.TrimSpace(workspaceSlug) == "" {
+		return fmt.Errorf("failed to resolve workspace slug")
 	}
-
-	req, err := http.NewRequest(
-		"POST",
-		fmt.Sprintf("%s/workspace/%s/update-embeddings", h.config.BaseURL, workspace),
-		bytes.NewBuffer(jsonData),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", "Bearer "+h.config.APIKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 10 * time.Minute}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("update embeddings failed: %s", string(respBody))
-	}
-
-	return nil
+	return h.anything.UpdateEmbeddings(context.Background(), workspaceSlug, nil, nil)
 }
 
 // updateDocumentStatus 更新文档状态
@@ -1463,36 +1425,11 @@ func (h *DocumentHandler) deleteFromAnythingLLM(filename, workspace string) erro
 	if !h.anythingLLMEnabled() {
 		return nil
 	}
-
-	reqBody := map[string]interface{}{
-		"filename": filename,
+	workspaceSlug := h.resolveWorkspaceSlug(workspace)
+	if strings.TrimSpace(workspaceSlug) == "" {
+		return nil
 	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequest(
-		"DELETE",
-		fmt.Sprintf("%s/workspace/%s/remove-document", h.config.BaseURL, workspace),
-		bytes.NewBuffer(jsonData),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", "Bearer "+h.config.APIKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	return nil
+	return h.anything.RemoveDocument(context.Background(), workspaceSlug, filename)
 }
 
 // calculateProgress 根据状态计算进度百分比
@@ -1535,57 +1472,9 @@ func (h *DocumentHandler) vectorSearch(query string, topN int, workspace string)
 	if !h.anythingLLMEnabled() {
 		return nil, fmt.Errorf("anythingllm is not configured")
 	}
-
-	reqBody := map[string]interface{}{
-		"query": query,
-		"topN":  topN,
+	workspaceSlug := h.resolveWorkspaceSlug(workspace)
+	if strings.TrimSpace(workspaceSlug) == "" {
+		return nil, fmt.Errorf("failed to resolve workspace slug")
 	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequest(
-		"POST",
-		fmt.Sprintf("%s/workspace/%s/vector-search", h.config.BaseURL, workspace),
-		bytes.NewBuffer(jsonData),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", "Bearer "+h.config.APIKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("vector search failed: %s", string(respBody))
-	}
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	responses, ok := result["responses"].([]interface{})
-	if !ok {
-		if items, ok := result["items"].([]interface{}); ok {
-			return items, nil
-		}
-		return []interface{}{result}, nil
-	}
-
-	return responses, nil
+	return h.anything.VectorSearch(context.Background(), workspaceSlug, query, topN)
 }
